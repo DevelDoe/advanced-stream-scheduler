@@ -4,6 +4,10 @@ import cron from "node-cron";
 import fs from "fs";
 import moment from "moment-timezone";
 import { EventEmitter } from "events";
+import { randomUUID } from "crypto";
+
+const ACTIONS_LOG = "actions.log";
+const oneOffTimers = new Map(); // actionId -> timeout
 
 export const schedulerBus = new EventEmitter();
 
@@ -14,6 +18,11 @@ const TIMEZONE = "America/New_York";
 const ENABLE_PY_STATUS = false;
 const PY_HEALTH_FILE = process.env.PY_AUTOMATER_HEALTH || "obs_py_health.json";
 const PY_STALE_SECS = 90;
+
+const HB_EXPECTED_SEC = 30; // should match your cron beat "*/30 * * * * *"
+const HB_GRACE_SEC = 15; // how long after expected before we alert
+let lastHeartbeatAt = 0;
+let heartbeatGapOpen = false;
 
 // ───────── internal state for start/stop/restart ─────────
 let started = false;
@@ -79,6 +88,25 @@ async function withOBS(taskName, fn) {
     schedulerBus.emit("obs_status", { ok: false, error: "connect-failed" });
 }
 
+// add this helper:
+function checkHeartbeat() {
+    if (!lastHeartbeatAt) return; // not started yet
+    const ageSec = (Date.now() - lastHeartbeatAt) / 1000;
+    const threshold = HB_EXPECTED_SEC + HB_GRACE_SEC;
+    const stale = ageSec > threshold;
+
+    if (stale && !heartbeatGapOpen) {
+        log(`⛔ No heartbeat for ${Math.round(ageSec)}s (threshold ${threshold}s).`);
+        heartbeatGapOpen = true;
+        schedulerBus.emit("heartbeat_stale", { ageSec });
+    } else if (!stale && heartbeatGapOpen) {
+        // recovered
+        log(`✅ Heartbeat recovered after ${Math.round(ageSec)}s without beats.`);
+        heartbeatGapOpen = false;
+        schedulerBus.emit("heartbeat_recovered", { ageSec });
+    }
+}
+
 // ───────── Scenes/Streaming ─────────
 export function startStream() {
     withOBS("start_stream", async (obs) => {
@@ -113,31 +141,31 @@ export function endStream() {
 }
 
 function logHeartbeat() {
-    schedulerBus.emit("heartbeat", { at: Date.now() });
-    log("⏱️ Heartbeat: Scheduler is alive.");
+    lastHeartbeatAt = Date.now();
+    schedulerBus.emit("heartbeat", { at: lastHeartbeatAt });
 }
-
 // ───────── Cron + intervals ─────────
 export function startScheduler() {
-    if (started) return; // idempotent
+    if (started) return;
     started = true;
 
     log("📅 Scheduler started... (Eastern Time)");
 
-    add(cron.schedule("0 0 * * 1-5", switchToIntro, { timezone: TIMEZONE }));
-    add(cron.schedule("0 3 * * 1", startStream, { timezone: TIMEZONE }));
-    add(cron.schedule("55 3 * * 1-5", switchToLive, { timezone: TIMEZONE }));
-    add(cron.schedule("0 20 * * 1-5", switchToEnd, { timezone: TIMEZONE }));
-    add(cron.schedule("15 20 * * 5", endStream, { timezone: TIMEZONE }));
-
-    // 30s heartbeat
+    // 30s heartbeat (no log, just timestamp + UI)
     add(cron.schedule("*/30 * * * * *", logHeartbeat, { timezone: TIMEZONE }));
+
+    // Heartbeat watchdog (every 10s checks for late beats and logs only on gap/recover)
+    add(cron.schedule("*/10 * * * * *", checkHeartbeat, { timezone: TIMEZONE }));
+
     // 60s OBS probe
     add(cron.schedule("0 */1 * * * *", probeOBSOnce, { timezone: TIMEZONE }));
+
     // Optional Python health check
     if (ENABLE_PY_STATUS) {
         add(cron.schedule("*/30 * * * * *", readPythonHealth, { timezone: TIMEZONE }));
     }
+
+    // initialize first beat so the watchdog has a baseline
     logHeartbeat();
 }
 
@@ -149,6 +177,65 @@ export function stopScheduler() {
     });
     jobs = [];
     started = false;
+}
+
+function msUntil(tsISO) {
+    return Math.max(0, new Date(tsISO).getTime() - Date.now());
+}
+
+function runObsAction(action) {
+    const label = `[action:${action.type}]`;
+    if (action.type === "start") {
+        return withOBS("start_stream", async (obs) => {
+            log(`${label} 🚀 StartStream`);
+            await obs.call("SetCurrentProgramScene", { sceneName: action.payload?.sceneName || "intro" });
+            await obs.call("StartStream");
+        });
+    }
+    if (action.type === "setScene") {
+        const scene = action.payload?.sceneName || "live";
+        return withOBS("set_scene", async (obs) => {
+            log(`${label} 🎬 SetCurrentProgramScene → ${scene}`);
+            await obs.call("SetCurrentProgramScene", { sceneName: scene });
+        });
+    }
+    if (action.type === "end") {
+        return withOBS("end_stream", async (obs) => {
+            log(`${label} 🛑 StopStream`);
+            await obs.call("StopStream");
+        });
+    }
+    log(`${label} ⚠️ Unknown type`);
+}
+
+export function scheduleOneOffAction(action) {
+    // clear existing timer if any
+    const existing = oneOffTimers.get(action.id);
+    if (existing) clearTimeout(existing);
+
+    const delay = msUntil(action.at);
+    const t = setTimeout(async () => {
+        try {
+            await runObsAction(action);
+            fs.appendFileSync(ACTIONS_LOG, `${new Date().toISOString()} executed ${action.id}\n`);
+        } catch (e) {
+            log(`[action:${action.type}] ❌ Error: ${e?.message || e}`);
+        } finally {
+            oneOffTimers.delete(action.id); // execute once
+        }
+    }, delay);
+
+    oneOffTimers.set(action.id, t);
+    log(`⏲️ Scheduled action ${action.id} (${action.type}) in ${Math.round(delay / 1000)}s`);
+}
+
+export function cancelOneOffAction(actionId) {
+    const t = oneOffTimers.get(actionId);
+    if (t) {
+        clearTimeout(t);
+        oneOffTimers.delete(actionId);
+        log(`🗑️ Cancelled scheduled action ${actionId}`);
+    }
 }
 
 export function restartScheduler() {

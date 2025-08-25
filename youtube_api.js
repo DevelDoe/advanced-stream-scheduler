@@ -7,7 +7,7 @@ import open from "open";
 import { google } from "googleapis";
 import path from "path";
 
-const SCOPES = ["https://www.googleapis.com/auth/youtube"];
+const SCOPES = ["https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.upload"];
 const REDIRECT_PORT = 4567;
 
 const TOKEN_PATH = path.join(app.getPath("userData"), "token.json");
@@ -72,8 +72,100 @@ function getNewToken(oAuth2Client, callback) {
     });
 }
 
-export function scheduleLiveStream(auth, title, startTime) {
+// Helper: ensure we have a reusable liveStream and return its ingest info (RTMP + key)
+async function ensureReusableStream(auth) {
+    const yt = google.youtube({ version: "v3", auth });
+    const streams = await yt.liveStreams.list({
+        part: "id,cdn,contentDetails,snippet",
+        mine: true,
+        maxResults: 50,
+    });
+
+    let reusable = (streams.data.items || []).find((s) => s.contentDetails?.isReusable);
+    if (!reusable) {
+        const created = await yt.liveStreams.insert({
+            part: "snippet,cdn,contentDetails",
+            requestBody: {
+                snippet: { title: "Arcane Monitor — Reusable Stream" },
+                cdn: { frameRate: "variable", ingestionType: "rtmp", resolution: "variable" },
+                contentDetails: { isReusable: true },
+            },
+        });
+        reusable = created.data;
+    }
+
+    const ingestion = reusable?.cdn?.ingestionInfo || {};
+    return {
+        streamId: reusable.id,
+        ingestionAddress: ingestion.ingestionAddress, // e.g. rtmp://a.rtmp.youtube.com/live2
+        streamName: ingestion.streamName, // 🔑 stream key
+    };
+}
+
+export async function bindBroadcastToDefaultStream(auth, broadcastId) {
+    const yt = google.youtube({ version: "v3", auth });
+    const { streamId, ingestionAddress, streamName } = await ensureReusableStream(auth);
+
+    await yt.liveBroadcasts.bind({
+        id: broadcastId,
+        part: "id,snippet,contentDetails,status",
+        streamId,
+    });
+
+    return { streamId, ingestionAddress, streamName };
+}
+
+function guessMime(filePath) {
+    const ext = path.extname(filePath || "").toLowerCase();
+    if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+    if (ext === ".png") return "image/png";
+    if (ext === ".webp") return "image/webp";
+    if (ext === ".gif") return "image/gif";
+    return "application/octet-stream";
+}
+
+export async function setBroadcastThumbnail(auth, videoId, filePath) {
+    if (!filePath) throw new Error("thumbPath missing");
+    if (!fs.existsSync(filePath)) throw new Error(`thumbnail file not found: ${filePath}`);
+
+    const yt = google.youtube({ version: "v3", auth });
+    const mimeType = guessMime(filePath);
+    const media = { mimeType, body: fs.createReadStream(filePath) };
+
+    try {
+        const res = await yt.thumbnails.set({ videoId, media });
+        return res?.data || { ok: true };
+    } catch (err) {
+        const payload = err?.response?.data || err?.errors || err?.message || err;
+        throw new Error(typeof payload === "string" ? payload : JSON.stringify(payload));
+    }
+}
+
+export function scheduleLiveStream(auth, fields) {
+    const {
+        title,
+        startTime,
+        description = "",
+        privacy = "public", // "public" | "unlisted" | "private"
+        tags = [], // array of strings
+        latency = "ultraLow", // "normal" | "low" | "ultraLow"
+    } = fields || {};
+
     const youtube = google.youtube({ version: "v3", auth });
+
+    // Map to YouTube API enums
+    const latencyMap = {
+        normal: "normal",
+        low: "low",
+        ultraLow: "ultraLow",
+        // tolerate casing variants:
+        NORMAL: "normal",
+        LOW: "low",
+        ULTRA_LOW: "ultraLow",
+        ULTRALOW: "ultraLow",
+    };
+    const latencyPref = latencyMap[latency] || "ultraLow";
+
     const safeTitle = (title && title.trim()) || `Arcane Monitor — ${new Date(startTime).toISOString()}`;
     const isoStart = new Date(startTime).toISOString();
 
@@ -81,20 +173,28 @@ export function scheduleLiveStream(auth, title, startTime) {
         .insert({
             part: "snippet,status,contentDetails",
             requestBody: {
-                snippet: { title: safeTitle, scheduledStartTime: isoStart },
-                status: { privacyStatus: "public" },
-                contentDetails: { monitorStream: { enableMonitorStream: false } },
+                snippet: { title: safeTitle, description, scheduledStartTime: isoStart, tags: Array.isArray(tags) ? tags : [] },
+                status: { privacyStatus: privacy },
+                contentDetails: {
+                    monitorStream: { enableMonitorStream: false },
+                    latencyPreference: latencyPref, // 👈 ensure ULTRA LOW by default
+                },
             },
         })
         .then((res) => {
             const b = res.data;
-            return { id: b.id, title: b?.snippet?.title, time: b?.snippet?.scheduledStartTime };
+            return {
+                id: b.id,
+                title: b?.snippet?.title,
+                time: b?.snippet?.scheduledStartTime,
+                privacy: b?.status?.privacyStatus,
+            };
         })
         .catch(async (err) => {
             const payload = err?.response?.data || err?.errors || err?.message || err;
             console.error("❌ Error creating stream:", payload);
             const msg = JSON.stringify(payload);
-            if (msg.includes("invalid_grant") || msg.includes("invalidCredentials")) {
+            if (/(invalid_grant|invalidCredentials|unauthorized_client)/i.test(msg)) {
                 try {
                     if (fs.existsSync(TOKEN_PATH)) fs.unlinkSync(TOKEN_PATH);
                     console.warn("🔁 Token invalid; deleted token.json. Re-auth required.");
@@ -106,24 +206,37 @@ export function scheduleLiveStream(auth, title, startTime) {
 
 export async function listUpcomingBroadcasts(auth) {
     const yt = google.youtube({ version: "v3", auth });
-    const res = await yt.liveBroadcasts.list({
-        part: "id,snippet,status",
-        mine: true,
-        broadcastType: "event",
-        maxResults: 50,
-    });
-    const items = res.data.items || [];
-    const upcoming = items.filter((b) => {
-        const lc = b.status?.lifeCycleStatus;
-        return lc === "created" || lc === "ready";
-    });
-    upcoming.sort((a, b) => new Date(a.snippet?.scheduledStartTime || 0) - new Date(b.snippet?.scheduledStartTime || 0));
-    return upcoming.map((b) => ({
-        id: b.id,
-        title: b.snippet?.title,
-        time: b.snippet?.scheduledStartTime,
-        privacy: b.status?.privacyStatus,
-    }));
+    try {
+        const res = await yt.liveBroadcasts.list({
+            part: "id,snippet,status",
+            mine: true,
+            broadcastType: "event",
+            maxResults: 50,
+        });
+        const items = res.data.items || [];
+        const upcoming = items.filter((b) => {
+            const lc = b.status?.lifeCycleStatus;
+            return lc === "created" || lc === "ready";
+        });
+        upcoming.sort((a, b) => new Date(a.snippet?.scheduledStartTime || 0) - new Date(b.snippet?.scheduledStartTime || 0));
+        return upcoming.map((b) => ({
+            id: b.id,
+            title: b.snippet?.title,
+            time: b.snippet?.scheduledStartTime,
+            privacy: b.status?.privacyStatus,
+        }));
+    } catch (err) {
+        const payload = err?.response?.data || err?.errors || err?.message || err;
+        console.error("❌ listUpcoming failed:", payload);
+        const msg = JSON.stringify(payload);
+        if (/(invalid_grant|invalidCredentials|unauthorized_client)/i.test(msg)) {
+            try {
+                if (fs.existsSync(TOKEN_PATH)) fs.unlinkSync(TOKEN_PATH);
+                console.warn("🔁 Token invalid; deleted token.json. Re-auth required.");
+            } catch {}
+        }
+        throw payload;
+    }
 }
 
 export async function deleteBroadcast(auth, id) {
@@ -132,38 +245,7 @@ export async function deleteBroadcast(auth, id) {
     return { id };
 }
 
-export async function bindBroadcastToDefaultStream(auth, broadcastId) {
-    const yt = google.youtube({ version: "v3", auth });
-    const streams = await yt.liveStreams.list({
-        part: "id,cdn,contentDetails",
-        mine: true,
-        maxResults: 50,
-    });
-    const reusable = (streams.data.items || []).find((s) => s.contentDetails?.isReusable);
-
-    let streamId = reusable?.id;
-    if (!streamId) {
-        const created = await yt.liveStreams.insert({
-            part: "snippet,cdn,contentDetails",
-            requestBody: {
-                snippet: { title: "Arcane Monitor — Reusable Stream" },
-                cdn: { frameRate: "variable", ingestionType: "rtmp", resolution: "variable" },
-                contentDetails: { isReusable: true },
-            },
-        });
-        streamId = created.data.id;
-    }
-
-    await yt.liveBroadcasts.bind({
-        id: broadcastId,
-        part: "id,snippet,contentDetails,status",
-        streamId,
-    });
-
-    return streamId;
-}
-
-export async function transitionBroadcast(auth, broadcastId, status /* "testing" | "live" | "complete" */) {
+export async function transitionBroadcast(auth, broadcastId, status) {
     const yt = google.youtube({ version: "v3", auth });
     return yt.liveBroadcasts.transition({
         id: broadcastId,

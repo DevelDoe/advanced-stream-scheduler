@@ -1,30 +1,282 @@
-<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Arcane Stream Scheduler</title>
+        <style>
+            :root {
+                --bg: #1b1f24;
+                --panel: #151515;
+                --muted: #7a8b99;
+                --text: #eaeff5;
+                --accent: #4aa3ff;
+                --accent-2: #2b6cb0;
+                --ok: #1e8e3e;
+                --bad: #8e1e1e;
+                --chip: #191919;
+                --border: #2a2a2a;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                height: 100%;
+            }
+            body {
+                padding: 20px;
+                margin: 0 auto;
+                background: var(--bg);
+                color: var(--text);
+                font: 14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+            }
+            h1 {
+                margin: 0 0 8px;
+                font-weight: 800;
+                letter-spacing: 0.2px;
+            }
 
-<h1>Arcane Stream Scheduler</h1>
+            /* ── Hide all scrollbars, keep scrolling ───────────────────────────── */
+            * {
+                /* Firefox */
+                scrollbar-width: none;
+                /* Old Edge/IE */
+                -ms-overflow-style: none;
+            }
+            *::-webkit-scrollbar {
+                /* Chrome/Safari/Electron */
+                width: 0 !important;
+                height: 0 !important;
+                display: none;
+            }
+            *::-webkit-scrollbar-thumb,
+            *::-webkit-scrollbar-track {
+                background: transparent;
+            }
 
-<div id="status" style="font-family: system-ui; display: flex; gap: 12px; align-items: center; margin-bottom: 8px">
-    <span id="schedBadge" style="padding: 4px 8px; border-radius: 8px; background: #333">Scheduler: —</span>
-    <span id="ytBadge" style="padding: 4px 8px; border-radius: 8px; background: #333">YouTube: —</span>
-    <span id="obsBadge" style="padding: 4px 8px; border-radius: 8px; background: #333">OBS: —</span>
-    <span id="hb" style="opacity: 0.7">HB: —</span>
-</div>
+            /* (optional) ensure main containers can still scroll without bars */
+            html,
+            body {
+                overflow: auto;
+            }
+            #log,
+            textarea,
+            ul,
+            .container {
+                overflow: auto;
+            }
 
-<div style="margin: 8px 0">
-    <button id="refreshBtn">Refresh Upcoming</button>
-</div>
-<ul id="upcoming" style="list-style: none; padding: 0; margin: 0; color: #fff"></ul>
+            .container {
+                max-width: 1100px;
+                margin: 0 auto;
+            }
 
-<div style="margin-bottom: 8px">
-    <input id="title" placeholder="Stream title" value="Momentum Market Scanner Arcane v4.1 Lore | No Paywall" />
-    <input id="startTime" type="datetime-local" />
-    <button id="scheduleBtn">Schedule Stream</button>
-</div>
+            /* badges */
+            .badges {
+                display: flex;
+                gap: 12px;
+                align-items: center;
+                margin-bottom: 10px;
+            }
+            .badge {
+                padding: 4px 8px;
+                border-radius: 1px;
+                background: #333;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+            }
+            #hb {
+                opacity: 0.7;
+            }
 
-<div
-    id="toast"
-    style="position: fixed; right: 12px; bottom: 12px; background: #222; color: #fff; padding: 10px 14px; border-radius: 10px; opacity: 0; transition: opacity 0.2s; pointer-events: none"
-></div>
+            /* buttons/inputs */
+            button {
+                background: #222;
+                color: var(--text);
+                border: 1px solid var(--border);
+                padding: 6px 10px;
+                border-radius: 1px;
+                cursor: pointer;
+            }
+            button:hover {
+                background: #262626;
+            }
+            button:active {
+                transform: translateY(1px);
+            }
+            .btn-danger {
+                background: #2a1a1a;
+                border-color: #3a2323;
+            }
+            .btn-danger:hover {
+                background: #3a2323;
+            }
+            input,
+            select,
+            textarea {
+                background: #101010;
+                color: var(--text);
+                border: 1px solid var(--border);
+                border-radius: 1px;
+                padding: 6px 8px;
+            }
+            textarea {
+                resize: vertical;
+            }
 
-<pre id="log" style="background: #111; color: #9bd; padding: 8px; border-radius: 8px; height: 220px; overflow: auto"></pre>
+            /* layout for schedule form */
+            .schedule-grid {
+                display: grid;
+                grid-template-columns: 1.2fr 1fr;
+                gap: 10px 14px;
+                align-items: start;
+                margin: 16px 0;
+            }
+            .schedule-row {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }
+            .meta-row {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            .meta-inline {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            .meta-inline label {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                white-space: nowrap;
+            }
+            #description {
+                min-height: 110px;
+            }
 
-<script src="renderer.js"></script>
+            .thumb-row {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }
+            .thumb-row span {
+                opacity: 0.8;
+            }
+
+            /* upcoming list */
+            #upcoming {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+            }
+            /* your rowTemplate still uses inline styles; this fallback styles any custom rows too */
+            .broadcast-row {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin: 6px 0;
+                padding: 8px;
+                border-radius: 1px;
+                background: var(--chip);
+                border: 1px solid var(--border);
+            }
+
+            /* toast + log */
+            #toast {
+                position: fixed;
+                right: 12px;
+                bottom: 12px;
+                background: #222;
+                color: #fff;
+                padding: 10px 14px;
+                border-radius: 10px;
+                opacity: 0;
+                transition: opacity 0.2s;
+                pointer-events: none;
+            }
+            #log {
+                background: #111;
+                color: #9bd;
+                padding: 8px;
+                border-radius: 1px;
+                height: 140px;
+                overflow: auto;
+                border: 1px solid var(--border);
+            }
+
+            @media (max-width: 900px) {
+                .schedule-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Arcane Stream Scheduler</h1>
+
+            <div id="status" class="badges">
+                <span id="schedBadge" class="badge">Scheduler: —</span>
+                <span id="ytBadge" class="badge">YouTube: —</span>
+                <span id="obsBadge" class="badge">OBS: —</span>
+                <span id="hb" style="display: none">HB: —</span>
+            </div>
+
+            <div style="margin: 8px 0">
+                <button id="refreshBtn">Refresh Upcoming</button>
+            </div>
+
+            <ul id="upcoming"></ul>
+
+            <!-- Scheduling form -->
+            <div class="schedule-grid">
+                <div class="schedule-row">
+                    <input id="title" placeholder="Stream title" style="flex: 1" value="Momentum Market Scanner Arcane v4.1 Lore | No Paywall" />
+                    <input id="startTime" type="datetime-local" />
+                    <button id="scheduleBtn">Schedule Stream</button>
+                </div>
+
+                <div class="meta-row">
+                    <textarea id="description" rows="10" placeholder="Description"></textarea>
+
+                    <div class="meta-inline">
+                        <label
+                            >Visibility
+                            <select id="visibility">
+                                <option value="public">Public</option>
+                                <option value="unlisted">Unlisted</option>
+                                <option value="private">Private</option>
+                            </select>
+                        </label>
+
+                        <label
+                            >Latency
+                            <select id="latency">
+                                <option value="ultraLow" selected>Ultra Low</option>
+                                <option value="low">Low</option>
+                                <option value="normal">Normal</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    <textarea id="tags" rows="5" placeholder="Comma-separated tags (e.g. stocks, momentum, arcane)"></textarea>
+
+                    <div class="thumb-row">
+                        <button id="thumbPickBtn" type="button">Choose Thumbnail</button>
+                        <span id="thumbName">No previous thumbnail</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="toast"></div>
+            <pre id="log"></pre>
+        </div>
+
+        <script src="renderer.js"></script>
+    </body>
+</html>
