@@ -1,0 +1,30 @@
+<!-- index.html -->
+
+<h1>Arcane Stream Scheduler</h1>
+
+<div id="status" style="font-family: system-ui; display: flex; gap: 12px; align-items: center; margin-bottom: 8px">
+    <span id="schedBadge" style="padding: 4px 8px; border-radius: 8px; background: #333">Scheduler: —</span>
+    <span id="ytBadge" style="padding: 4px 8px; border-radius: 8px; background: #333">YouTube: —</span>
+    <span id="obsBadge" style="padding: 4px 8px; border-radius: 8px; background: #333">OBS: —</span>
+    <span id="hb" style="opacity: 0.7">HB: —</span>
+</div>
+
+<div style="margin: 8px 0">
+    <button id="refreshBtn">Refresh Upcoming</button>
+</div>
+<ul id="upcoming" style="list-style: none; padding: 0; margin: 0; color: #fff"></ul>
+
+<div style="margin-bottom: 8px">
+    <input id="title" placeholder="Stream title" value="Momentum Market Scanner Arcane v4.1 Lore | No Paywall" />
+    <input id="startTime" type="datetime-local" />
+    <button id="scheduleBtn">Schedule Stream</button>
+</div>
+
+<div
+    id="toast"
+    style="position: fixed; right: 12px; bottom: 12px; background: #222; color: #fff; padding: 10px 14px; border-radius: 10px; opacity: 0; transition: opacity 0.2s; pointer-events: none"
+></div>
+
+<pre id="log" style="background: #111; color: #9bd; padding: 8px; border-radius: 8px; height: 220px; overflow: auto"></pre>
+
+<script src="renderer.js"></script>

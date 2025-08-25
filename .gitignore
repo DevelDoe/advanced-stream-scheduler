@@ -1,0 +1,67 @@
+# ─────────────────────────────
+# Node / Electron basics
+# ─────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ─────────────────────────────
+# Electron build artifacts
+# ─────────────────────────────
+dist/
+dist_electron/
+out/
+build/
+release/
+coverage/
+
+# Electron cache / binaries
+*.asar
+*.asar.unpacked
+
+# ─────────────────────────────
+# Logs & temp
+# ─────────────────────────────
+*.log
+*.csv
+*.pid
+*.seed
+*.pid.lock
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# ─────────────────────────────
+# Editor / IDE
+# ─────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ─────────────────────────────
+# Env files (keep local only)
+# ─────────────────────────────
+.env
+.env.*.local
+
+# ─────────────────────────────
+# Misc
+# ─────────────────────────────
+*.tgz
+*.bak
+*.orig
+
+
+credentials.json
+token.json
+*.log

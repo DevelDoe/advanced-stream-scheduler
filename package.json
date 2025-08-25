@@ -1,0 +1,22 @@
+{
+    "name": "arcane-stream-scheduler",
+    "version": "1.0.0",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "type": "module",
+    "author": "",
+    "license": "ISC",
+    "description": "",
+    "dependencies": {
+        "electron": "^37.3.1",
+        "googleapis": "^156.0.0",
+        "moment-timezone": "^0.6.0",
+        "node-cron": "^4.2.1",
+        "obs-websocket-js": "^5.0.6",
+        "open": "^10.2.0"
+    }
+}
