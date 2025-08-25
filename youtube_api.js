@@ -1,5 +1,4 @@
 // youtube_api.js
-
 import { app } from "electron";
 import fs from "fs";
 import http from "http";
@@ -8,17 +7,15 @@ import open from "open";
 import { google } from "googleapis";
 import path from "path";
 
-const SCOPES = ["https://www.googleapis.com/auth/youtube"]; // full manage
+const SCOPES = ["https://www.googleapis.com/auth/youtube"];
 const REDIRECT_PORT = 4567;
 
-// 🔐 store tokens under userData so they persist per-user/app
-const TOKEN_PATH = path.join(app.getPath("userData"), "token.json"); // CHANGED
+const TOKEN_PATH = path.join(app.getPath("userData"), "token.json");
 const CRED_PATH = path.resolve(process.cwd(), "credentials.json");
 
 export function loadAuth(callback) {
     const credentials = JSON.parse(fs.readFileSync(CRED_PATH, "utf-8"));
     const { client_secret, client_id } = credentials.installed;
-
     const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, `http://localhost:${REDIRECT_PORT}`);
 
     if (fs.existsSync(TOKEN_PATH)) {
@@ -34,13 +31,13 @@ function getNewToken(oAuth2Client, callback) {
     const authUrl = oAuth2Client.generateAuthUrl({
         access_type: "offline",
         scope: SCOPES,
-        prompt: "select_account consent", // force picker + fresh refresh_token
+        prompt: "select_account consent",
     });
 
     console.log("🔐 Authorize this app in your browser…");
     open(authUrl);
 
-    let handled = false; // prevent double exchange
+    let handled = false;
     const server = http.createServer(async (req, res) => {
         try {
             const { query } = url.parse(req.url, true);
@@ -59,8 +56,6 @@ function getNewToken(oAuth2Client, callback) {
             oAuth2Client.setCredentials(tokens);
             fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
             res.end("✅ Authorization successful! You may close this tab.");
-            await whoAmI(oAuth2Client); // optional debug
-
             server.close();
             if (callback) callback(oAuth2Client);
         } catch (err) {
@@ -76,23 +71,6 @@ function getNewToken(oAuth2Client, callback) {
         console.log(`🌐 Listening for auth code on http://localhost:${REDIRECT_PORT} …`);
     });
 }
-
-async function whoAmI(auth) {
-    try {
-        const oauth2 = google.oauth2("v2");
-        const me = await oauth2.userinfo.get({ auth });
-        console.log("👤 Google account:", me?.data?.email);
-
-        const yt = google.youtube({ version: "v3", auth });
-        const ch = await yt.channels.list({ part: "snippet", mine: true });
-        const item = ch.data.items?.[0];
-        console.log("📺 YouTube channel:", { title: item?.snippet?.title, id: item?.id });
-    } catch (e) {
-        console.warn("⚠️ whoAmI failed:", e?.response?.data || e?.message || e);
-    }
-}
-
-// ———————————————————————————————————————————
 
 export function scheduleLiveStream(auth, title, startTime) {
     const youtube = google.youtube({ version: "v3", auth });
@@ -110,15 +88,11 @@ export function scheduleLiveStream(auth, title, startTime) {
         })
         .then((res) => {
             const b = res.data;
-            const result = { id: b.id, title: b?.snippet?.title, time: b?.snippet?.scheduledStartTime };
-            console.log("✅ Stream scheduled:", result);
-            return result;
+            return { id: b.id, title: b?.snippet?.title, time: b?.snippet?.scheduledStartTime };
         })
         .catch(async (err) => {
             const payload = err?.response?.data || err?.errors || err?.message || err;
             console.error("❌ Error creating stream:", payload);
-
-            // Auto-recover on invalid_grant / invalid credentials
             const msg = JSON.stringify(payload);
             if (msg.includes("invalid_grant") || msg.includes("invalidCredentials")) {
                 try {
@@ -132,27 +106,18 @@ export function scheduleLiveStream(auth, title, startTime) {
 
 export async function listUpcomingBroadcasts(auth) {
     const yt = google.youtube({ version: "v3", auth });
-
-    // 1) Call with a single filter: mine=true (no broadcastStatus!)
     const res = await yt.liveBroadcasts.list({
         part: "id,snippet,status",
         mine: true,
-        broadcastType: "event", // or "all" if you also use persistent broadcasts
+        broadcastType: "event",
         maxResults: 50,
     });
-
     const items = res.data.items || [];
-
-    // 2) Filter client-side: upcoming ≈ lifeCycleStatus 'created' or 'ready'
     const upcoming = items.filter((b) => {
         const lc = b.status?.lifeCycleStatus;
         return lc === "created" || lc === "ready";
     });
-
-    // 3) Sort by scheduled time (soonest first)
     upcoming.sort((a, b) => new Date(a.snippet?.scheduledStartTime || 0) - new Date(b.snippet?.scheduledStartTime || 0));
-
-    // 4) Map to UI shape
     return upcoming.map((b) => ({
         id: b.id,
         title: b.snippet?.title,
@@ -165,4 +130,44 @@ export async function deleteBroadcast(auth, id) {
     const yt = google.youtube({ version: "v3", auth });
     await yt.liveBroadcasts.delete({ id });
     return { id };
+}
+
+export async function bindBroadcastToDefaultStream(auth, broadcastId) {
+    const yt = google.youtube({ version: "v3", auth });
+    const streams = await yt.liveStreams.list({
+        part: "id,cdn,contentDetails",
+        mine: true,
+        maxResults: 50,
+    });
+    const reusable = (streams.data.items || []).find((s) => s.contentDetails?.isReusable);
+
+    let streamId = reusable?.id;
+    if (!streamId) {
+        const created = await yt.liveStreams.insert({
+            part: "snippet,cdn,contentDetails",
+            requestBody: {
+                snippet: { title: "Arcane Monitor — Reusable Stream" },
+                cdn: { frameRate: "variable", ingestionType: "rtmp", resolution: "variable" },
+                contentDetails: { isReusable: true },
+            },
+        });
+        streamId = created.data.id;
+    }
+
+    await yt.liveBroadcasts.bind({
+        id: broadcastId,
+        part: "id,snippet,contentDetails,status",
+        streamId,
+    });
+
+    return streamId;
+}
+
+export async function transitionBroadcast(auth, broadcastId, status /* "testing" | "live" | "complete" */) {
+    const yt = google.youtube({ version: "v3", auth });
+    return yt.liveBroadcasts.transition({
+        id: broadcastId,
+        broadcastStatus: status,
+        part: "id,status,contentDetails",
+    });
 }
