@@ -1,6 +1,6 @@
 {
     "name": "arcane-stream-scheduler",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "private": true,
     "type": "module",
     "main": "main.js",
