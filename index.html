@@ -204,7 +204,7 @@
                 color: #9bd;
                 padding: 8px;
                 border-radius: 1px;
-                height: 140px;
+                height: 300px;
                 overflow: auto;
                 border: 1px solid var(--border);
             }
@@ -214,6 +214,49 @@
                     grid-template-columns: 1fr;
                 }
             }
+            .recurring {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            #recurringDays {
+                display: none; /* hidden by default */
+                margin-left: 20px;
+                padding: 6px 8px;
+                background: var(--chip);
+                border: 1px solid var(--border);
+                border-radius: 1px;
+            }
+            #recurringDays label {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                margin-right: 8px;
+                white-space: nowrap;
+                font-size: 13px;
+            }
+            #recurringDays input[type="checkbox"] {
+                accent-color: var(--accent); /* consistent blue check */
+            }
+            .recurring label {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                background: #101010;
+                border: 1px solid var(--border);
+                border-radius: 1px;
+                padding: 6px 12px;
+                cursor: pointer;
+                user-select: none;
+                height: 32px; /* match select */
+            }
+
+            .recurring input[type="checkbox"] {
+                margin-right: 6px;
+                accent-color: var(--accent);
+                transform: scale(1.1);
+            }
+            
         </style>
     </head>
     <body>
@@ -221,10 +264,11 @@
             <h1>Arcane Stream Scheduler</h1>
 
             <div id="status" class="badges">
-                <span id="schedBadge" class="badge">Scheduler: —</span>
-                <span id="ytBadge" class="badge">YouTube: —</span>
-                <span id="obsBadge" class="badge">OBS: —</span>
-                <span id="hb" style="display: none">HB: —</span>
+                <span id="schedBadge" class="badge" title="Automation clock. Green = automation clock is running."> OBS Automation: — </span>
+                <span id="ytBadge" class="badge" style="display: none" title="YouTube API. Green = broadcast scheduler is working (auth + API OK)."> YouTube Scheduler: — </span>
+                <span id="obsBadge" class="badge" title="OBS WebSocket. Green = OBS is running and reachable."> OBS Connection: — </span>
+                <span id="broadcastBadge" class="badge" title="Broadcast live state. Green = YouTube stream is LIVE."> YouTube Broadcast: — </span>
+                <span id="hb" style="display: none" title="Raw heartbeat timestamp (debug only)."> HB: — </span>
             </div>
 
             <div style="margin: 8px 0">
@@ -239,6 +283,19 @@
                     <input id="title" placeholder="Stream title" style="flex: 1" value="Momentum Market Scanner Arcane v4.1 Lore | No Paywall" />
                     <input id="startTime" type="datetime-local" />
                     <button id="scheduleBtn">Schedule Stream</button>
+                </div>
+
+                <div class="recurring">
+                    <label><input type="checkbox" id="recurringChk" /> Recurring</label>
+                    <div id="recurringDays">
+                        <label><input type="checkbox" value="1" /> Mon</label>
+                        <label><input type="checkbox" value="2" /> Tue</label>
+                        <label><input type="checkbox" value="3" /> Wed</label>
+                        <label><input type="checkbox" value="4" /> Thu</label>
+                        <label><input type="checkbox" value="5" /> Fri</label>
+                        <label><input type="checkbox" value="6" /> Sat</label>
+                        <label><input type="checkbox" value="0" /> Sun</label>
+                    </div>
                 </div>
 
                 <div class="meta-row">

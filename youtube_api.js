@@ -11,7 +11,7 @@ const SCOPES = ["https://www.googleapis.com/auth/youtube", "https://www.googleap
 const REDIRECT_PORT = 4567;
 
 const TOKEN_PATH = path.join(app.getPath("userData"), "token.json");
-const CRED_PATH = path.resolve(process.cwd(), "credentials.json");
+const CRED_PATH = app.isPackaged ? path.join(process.resourcesPath, "credentials.json") : path.resolve(process.cwd(), "credentials.json");
 
 export function loadAuth(callback) {
     const credentials = JSON.parse(fs.readFileSync(CRED_PATH, "utf-8"));
@@ -252,4 +252,22 @@ export async function transitionBroadcast(auth, broadcastId, status) {
         broadcastStatus: status,
         part: "id,status,contentDetails",
     });
+}
+
+// youtube_api.js
+export async function listActiveBroadcasts(auth) {
+    const youtube = google.youtube("v3");
+    const res = await youtube.liveBroadcasts.list({
+        auth,
+        part: ["id", "snippet", "status", "contentDetails"],
+        broadcastStatus: "active", // ✅ keep this
+        broadcastType: "all", // optional (event/persistent/all)
+        maxResults: 50,
+        // mine: true,                  // ❌ remove this (mutually exclusive)
+    });
+    return (res.data.items || []).map((b) => ({
+        id: b.id,
+        title: b.snippet?.title,
+        lifeCycleStatus: b.status?.lifeCycleStatus, // live/testing/complete/...
+    }));
 }

@@ -21,4 +21,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     loadDefaults: () => ipcRenderer.invoke("defaults.load"),
     saveDefaults: (values) => ipcRenderer.invoke("defaults.save", values),
     pickThumbnail: () => ipcRenderer.invoke("thumb.pick"),
+
+    // go live
+    goLive: (broadcastId) => ipcRenderer.invoke("yt.goLive", broadcastId),
+    onBroadcast: (cb) => ipcRenderer.on("broadcast/status", (_e, st) => cb(st)),
+
+    onTimezone: (cb) => ipcRenderer.on("scheduler/timezone", (_e, p) => cb(p)),
+
 });

@@ -2,9 +2,7 @@
 import OBSWebSocket from "obs-websocket-js";
 import cron from "node-cron";
 import fs from "fs";
-import moment from "moment-timezone";
 import { EventEmitter } from "events";
-import { randomUUID } from "crypto";
 
 const ACTIONS_LOG = "actions.log";
 const oneOffTimers = new Map(); // actionId -> timeout
@@ -12,7 +10,7 @@ const oneOffTimers = new Map(); // actionId -> timeout
 export const schedulerBus = new EventEmitter();
 
 const LOG_FILE = "auto_obs.log";
-const TIMEZONE = "America/New_York";
+let TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 // optional python health probe toggle
 const ENABLE_PY_STATUS = false;
@@ -33,12 +31,26 @@ function add(job) {
     return job;
 }
 
+function ts(tz = TIMEZONE) {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    }).formatToParts(new Date());
+    const m = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+    return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}:${m.second}`;
+}
+
 function log(msg) {
-    const timestamp = moment().tz(TIMEZONE).format("YYYY-MM-DD HH:mm:ss");
-    const line = `${timestamp} ${msg}\n`;
+    const line = `${ts()} ${msg}\n`;
     fs.appendFileSync(LOG_FILE, line);
     console.log(line.trim());
-    schedulerBus.emit("log", line.trim()); // forward to UI
+    schedulerBus.emit("log", line.trim());
 }
 
 async function probeOBSOnce() {
@@ -144,30 +156,41 @@ function logHeartbeat() {
     lastHeartbeatAt = Date.now();
     schedulerBus.emit("heartbeat", { at: lastHeartbeatAt });
 }
+
+// ---- Local timezone change watcher (single interval, debounced) ----
+let tzChangeLock = false;
+
 // ───────── Cron + intervals ─────────
 export function startScheduler() {
     if (started) return;
     started = true;
 
-    log("📅 Scheduler started... (Eastern Time)");
+    log(`📅 Scheduler started... (Local: ${TIMEZONE})`);
+    schedulerBus.emit("timezone", { tz: TIMEZONE }); // <— here once
 
-    // 30s heartbeat (no log, just timestamp + UI)
     add(cron.schedule("*/30 * * * * *", logHeartbeat, { timezone: TIMEZONE }));
-
-    // Heartbeat watchdog (every 10s checks for late beats and logs only on gap/recover)
     add(cron.schedule("*/10 * * * * *", checkHeartbeat, { timezone: TIMEZONE }));
-
-    // 60s OBS probe
     add(cron.schedule("0 */1 * * * *", probeOBSOnce, { timezone: TIMEZONE }));
 
-    // Optional Python health check
     if (ENABLE_PY_STATUS) {
         add(cron.schedule("*/30 * * * * *", readPythonHealth, { timezone: TIMEZONE }));
     }
 
-    // initialize first beat so the watchdog has a baseline
     logHeartbeat();
 }
+
+// TZ watcher (you already have it)
+const tzTimer = setInterval(() => {
+    const guessed = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    if (!tzChangeLock && guessed !== TIMEZONE) {
+        tzChangeLock = true;
+        TIMEZONE = guessed;
+        log(`🕒 Timezone changed to ${TIMEZONE}; restarting scheduler…`);
+        schedulerBus.emit("timezone", { tz: TIMEZONE }); // <— emit on change
+        restartScheduler();
+        setTimeout(() => (tzChangeLock = false), 5000);
+    }
+}, 60_000);
 
 export function stopScheduler() {
     jobs.forEach((j) => {
@@ -185,11 +208,13 @@ function msUntil(tsISO) {
 
 function runObsAction(action) {
     const label = `[action:${action.type}]`;
+
     if (action.type === "start") {
         return withOBS("start_stream", async (obs) => {
             log(`${label} 🚀 StartStream`);
             await obs.call("SetCurrentProgramScene", { sceneName: action.payload?.sceneName || "intro" });
             await obs.call("StartStream");
+            schedulerBus.emit("action_executed", action); // 👈 emit start
         });
     }
     if (action.type === "setScene") {
@@ -197,14 +222,17 @@ function runObsAction(action) {
         return withOBS("set_scene", async (obs) => {
             log(`${label} 🎬 SetCurrentProgramScene → ${scene}`);
             await obs.call("SetCurrentProgramScene", { sceneName: scene });
+            schedulerBus.emit("action_executed", action); // 👈 emit setScene
         });
     }
     if (action.type === "end") {
         return withOBS("end_stream", async (obs) => {
             log(`${label} 🛑 StopStream`);
             await obs.call("StopStream");
+            schedulerBus.emit("action_executed", action); // 👈 emit end
         });
     }
+
     log(`${label} ⚠️ Unknown type`);
 }
 
@@ -242,3 +270,6 @@ export function restartScheduler() {
     stopScheduler();
     startScheduler();
 }
+
+// clean up on exit (polish)
+process.on("beforeExit", () => clearInterval(tzTimer));

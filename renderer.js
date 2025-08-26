@@ -59,6 +59,19 @@ window.addEventListener("DOMContentLoaded", () => {
     const thumbPickBtn = document.getElementById("thumbPickBtn");
     const thumbNameEl = document.getElementById("thumbName");
 
+    const broadcastEl = document.getElementById("broadcastBadge");
+
+    const recurringChk = document.getElementById("recurringChk");
+    const recurringDaysBox = document.getElementById("recurringDays");
+
+    const schedBadge = document.getElementById("schedBadge");
+
+    recurringDaysBox.style.display = recurringChk.checked ? "block" : "none";
+
+    recurringChk?.addEventListener("change", () => {
+        recurringDaysBox.style.display = recurringChk.checked ? "block" : "none";
+    });
+
     let isEditing = false;
     let lastHB = 0;
     let chosenThumbPath = null;
@@ -113,10 +126,11 @@ window.addEventListener("DOMContentLoaded", () => {
             .map((s) => s.trim())
             .filter(Boolean);
         const latency = latencyEl.value || "ultraLow";
-
         const thumbPathToUse = chosenThumbPath || lastThumbPath || undefined;
 
-        await window.electronAPI.saveDefaults({ title, description, privacy, tags, latency, thumbPath: thumbPathToUse });
+        // ✅ read these at click-time
+        const recurring = document.getElementById("recurringChk").checked;
+        const days = [...document.querySelectorAll("#recurringDays input:checked")].map((cb) => Number(cb.value));
 
         try {
             await window.electronAPI.scheduleStream(title, isoUTC, {
@@ -125,6 +139,8 @@ window.addEventListener("DOMContentLoaded", () => {
                 tags,
                 latency,
                 thumbPath: thumbPathToUse,
+                recurring,
+                days,
             });
         } catch (e) {
             setBadge(ytEl, false, "YouTube: Error");
@@ -133,9 +149,15 @@ window.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    window.electronAPI.onTimezone(({ tz }) => {
+        if (!schedBadge) return;
+        schedBadge.title = `Automation clock (local: ${tz}). Green = running.`;
+        schedBadge.textContent = `OBS Automation: OK (${tz})`; // or keep your existing label
+    });
+
     // ── events from main/scheduler ─────────────────────────────────────────
     window.electronAPI.onScheduled(({ id, title, time, streamId, ingestionAddress, streamName }) => {
-        setBadge(ytEl, true, "YouTube: Scheduled");
+        setBadge(ytEl, true, "YouTube Scheduler: Scheduled");
         toast(`📅 Scheduled: ${title} — ${new Date(time).toLocaleString()}`);
         if (logEl) {
             logEl.textContent += `SCHEDULED #${id} (stream ${streamId}) @ ${time}\n`;
@@ -157,21 +179,37 @@ window.addEventListener("DOMContentLoaded", () => {
     window.electronAPI.onHeartbeat(({ at }) => {
         lastHB = at;
         if (hbEl) hbEl.textContent = "HB: " + new Date(at).toLocaleTimeString();
-        setBadge(schedEl, true, "Scheduler: OK");
+        setBadge(schedEl, true, "OBS Automation: OK");
     });
 
     setInterval(() => {
         if (!lastHB) return;
         const stale = Date.now() - lastHB > 65_000;
         if (stale) {
-            setBadge(schedEl, false, "Scheduler: DOWN");
-            toast("⚠️ Scheduler heartbeat stale");
+            setBadge(schedEl, false, "OBS Automation: DOWN");
+            toast("⚠️ OBS Automation heartbeat stale");
         }
     }, 10_000);
 
     window.electronAPI.onObs((st) => {
         if (st?.ok) setBadge(obsEl, true, `OBS: OK${st.version ? " " + st.version : ""}`);
         else setBadge(obsEl, false, "OBS: DOWN");
+    });
+
+    // ── broadcast badge ────────────────────────────────────────────────────
+    window.electronAPI.onBroadcast((st) => {
+        if (!st?.ok) {
+            setBadge(broadcastEl, false, `Broadcast: ${st?.error || "FAILED"}`);
+            return;
+        }
+        // Prefer polled counts when present
+        if (typeof st.liveCount === "number") {
+            const label = `LIVE (${st.liveCount})`; // always show count
+            setBadge(broadcastEl, st.liveCount > 0, `Broadcast: ${st.liveCount > 0 ? label : "OFFLINE"}`);
+        } else {
+            // one-off success (e.g., immediately after goLiveWithRetry)
+            setBadge(broadcastEl, true, "Broadcast: LIVE (1)");
+        }
     });
 
     // ── list + actions ─────────────────────────────────────────────────────
@@ -311,6 +349,16 @@ window.addEventListener("DOMContentLoaded", () => {
             sceneInput.value = "";
         }
     });
+
+    async function tryGoLive(broadcastId) {
+        try {
+            setBadge(broadcastEl, false, "Broadcast: starting…");
+            await window.electronAPI.goLive(broadcastId);
+        } catch (err) {
+            console.error("Go live failed:", err);
+            setBadge(broadcastEl, false, "Broadcast: error");
+        }
+    }
 
     refreshBtn?.addEventListener("click", () => refreshUpcoming(true));
     refreshUpcoming();

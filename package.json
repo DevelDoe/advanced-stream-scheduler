@@ -1,23 +1,52 @@
 {
     "name": "arcane-stream-scheduler",
     "version": "1.0.1",
-    "main": "main.js",
-    "scripts": {
-        "start": "electron .",
-        "test": "echo \"Error: no test specified\" && exit 1"
-    },
-    "keywords": [],
+    "private": true,
     "type": "module",
+    "main": "main.js",
+    "description": "",
     "author": "",
     "license": "ISC",
-    "description": "",
+    "scripts": {
+        "start": "electron .",
+        "dist": "electron-builder",
+        "clean": "rimraf dist",
+        "pack:win": "cross-env NODE_ENV=production DEBUG=false DATA=false BOUNCE=true forceUpdate=false electron-packager . \"Arcane Stream Scheduler\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --prune=true --icon=build/icon.ico --ignore=\"^/(dist|coverage|\\.github|.*\\.map$)/\"",
+        "pack:win:portable": "npm run clean && npm run pack:win",
+        "release:tag": "git tag v%npm_package_version% && git push origin v%npm_package_version%"
+    },
     "dependencies": {
-        "crypto": "^1.0.1",
-        "electron": "^37.3.1",
         "googleapis": "^156.0.0",
         "moment-timezone": "^0.6.0",
         "node-cron": "^4.2.1",
         "obs-websocket-js": "^5.0.6",
         "open": "^10.2.0"
+    },
+    "devDependencies": {
+        "cross-env": "^7.0.3",
+        "electron": "^37.3.1",
+        "electron-builder": "^26.0.12",
+        "electron-packager": "^17.1.2",
+        "rimraf": "^5.0.5"
+    },
+    "build": {
+        "appId": "com.arcane.stream.scheduler",
+        "productName": "Arcane Stream Scheduler",
+        "files": [
+            "**/*",
+            "!dist",
+            "!coverage",
+            "!.github"
+        ],
+        "win": {
+            "target": "nsis",
+            "icon": "build/icon.ico"
+        },
+        "extraResources": [
+            "credentials.json"
+        ],
+        "directories": {
+            "buildResources": "build"
+        }
     }
 }
