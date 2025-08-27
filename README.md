@@ -1,11 +1,11 @@
-# Arcane Stream Scheduler
+# Advanced Stream Scheduler
 
 A desktop application for scheduling and automating YouTube live streams with OBS integration.
 
 ## 🚀 Quick Start (For Users)
 
 ### **📦 Installation**
-1. **Download** the latest release from [GitHub Releases](https://github.com/DevelDoe/arcane-stream-scheduler/releases)
+1. **Download** the latest release from [GitHub Releases](https://github.com/DevelDoe/advanced-stream-scheduler/releases)
 2. **Install** the `.exe` file (Windows installer)
 3. **Run** the application
 4. **Setup** Google OAuth credentials (see detailed instructions below)
@@ -74,7 +74,7 @@ Before using the app, you need to set up Google OAuth credentials:
    - Go to "APIs & Services" → "Credentials"
    - Click "Create Credentials" → "OAuth 2.0 Client IDs"
    - Choose "Desktop application" as the application type
-   - Give it a name (e.g., "Arcane Stream Scheduler")
+   - Give it a name (e.g., "Advanced Stream Scheduler")
    - Click "Create"
 
 4. **Download Credentials**
@@ -175,9 +175,9 @@ Each scheduled stream can have automated actions:
 
 The app stores data in these locations:
 
-- **Windows**: `%APPDATA%\Arcane Stream Scheduler\`
-- **macOS**: `~/Library/Application Support/Arcane Stream Scheduler/`
-- **Linux**: `~/.config/Arcane Stream Scheduler/`
+- **Windows**: `%APPDATA%\Advanced Stream Scheduler\`
+- **macOS**: `~/Library/Application Support/Advanced Stream Scheduler/`
+- **Linux**: `~/.config/Advanced Stream Scheduler/`
 
 Files include:
 - `credentials.json` - Your Google OAuth credentials

@@ -353,7 +353,7 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("scheduler/log", `📋 Loaded ${actions.length} scheduled action(s)`);
     
     // Welcome message for new users
-    mainWindow?.webContents.send("scheduler/log", "🎉 Welcome to Arcane Stream Scheduler!");
+    mainWindow?.webContents.send("scheduler/log", "🎉 Welcome to Advanced Stream Scheduler!");
     mainWindow?.webContents.send("scheduler/log", "📝 First time? Go to File → Google Credentials Setup to get started.");
 
     // Forward scheduler bus events to renderer

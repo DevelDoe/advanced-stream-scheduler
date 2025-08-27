@@ -214,7 +214,7 @@ async function ensureReusableStream(auth) {
         const created = await yt.liveStreams.insert({
             part: "snippet,cdn,contentDetails",
             requestBody: {
-                snippet: { title: "Arcane Monitor — Reusable Stream" },
+                snippet: { title: "Advanced Monitor — Reusable Stream" },
                 cdn: { frameRate: "variable", ingestionType: "rtmp", resolution: "variable" },
                 contentDetails: { isReusable: true },
             },
@@ -293,7 +293,7 @@ export function scheduleLiveStream(auth, fields) {
     };
     const latencyPref = latencyMap[latency] || "ultraLow";
 
-    const safeTitle = (title && title.trim()) || `Arcane Monitor — ${new Date(startTime).toISOString()}`;
+    const safeTitle = (title && title.trim()) || `Advanced Monitor — ${new Date(startTime).toISOString()}`;
     const isoStart = new Date(startTime).toISOString();
 
     return youtube.liveBroadcasts

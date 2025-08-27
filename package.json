@@ -1,5 +1,5 @@
 {
-    "name": "arcane-stream-scheduler",
+    "name": "advanced-stream-scheduler",
     "version": "2.0.0",
     "private": true,
     "type": "module",
@@ -11,7 +11,7 @@
         "start": "electron .",
         "dist": "electron-builder",
         "clean": "rimraf dist",
-        "pack:win": "cross-env NODE_ENV=production DEBUG=false DATA=false BOUNCE=true forceUpdate=false electron-packager . \"Arcane Stream Scheduler\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --prune=true --icon=build/icon.ico --ignore=\"^/(dist|coverage|\\.github|.*\\.map$)/\"",
+        "pack:win": "cross-env NODE_ENV=production DEBUG=false DATA=false BOUNCE=true forceUpdate=false electron-packager . \"Advanced Stream Scheduler\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --prune=true --icon=build/icon.ico --ignore=\"^/(dist|coverage|\\.github|.*\\.map$)/\"",
         "pack:win:portable": "npm run clean && npm run pack:win",
         "release:tag": "git tag v%npm_package_version% && git push origin v%npm_package_version%",
         "publish": "node scripts/publish.js",
@@ -36,15 +36,15 @@
         "rimraf": "^5.0.5"
     },
     "build": {
-        "appId": "com.arcane.stream-scheduler",
-        "productName": "Arcane Stream Scheduler",
+        "appId": "com.advanced.stream-scheduler",
+        "productName": "Advanced Stream Scheduler",
         "directories": {
             "output": "dist"
         },
         "publish": {
             "provider": "github",
             "owner": "DevelDoe",
-            "repo": "arcane-stream-scheduler",
+            "repo": "advanced-stream-scheduler",
             "private": false
         },
         "files": [

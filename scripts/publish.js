@@ -115,7 +115,7 @@ function main() {
     
     log('🎉 Release process completed!', 'green');
     log(`📦 Version ${newVersion} has been released`, 'green');
-    log('🔗 Check GitHub for the release: https://github.com/your-username/arcane-stream-scheduler/releases', 'cyan');
+    log('🔗 Check GitHub for the release: https://github.com/your-username/advanced-stream-scheduler/releases', 'cyan');
 }
 
 // ES module equivalent of require.main === module

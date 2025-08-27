@@ -78,7 +78,7 @@ jobs:
             
             ---
             
-            **Thank you for using Arcane Stream Scheduler!** 🚀
+            **Thank you for using Advanced Stream Scheduler!** 🚀
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

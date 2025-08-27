@@ -1,4 +1,4 @@
-# Arcane Stream Scheduler v{{version}}
+# Advanced Stream Scheduler v{{version}}
 
 ## 🎉 What's New
 
@@ -15,8 +15,8 @@
 ## 📋 Installation
 
 ### Windows
-- **Installer**: Download `Arcane-Stream-Scheduler-Setup-{{version}}.exe` for automatic installation
-- **Portable**: Download `Arcane-Stream-Scheduler-{{version}}-win.zip` for portable use
+- **Installer**: Download `Advanced-Stream-Scheduler-Setup-{{version}}.exe` for automatic installation
+- **Portable**: Download `Advanced-Stream-Scheduler-{{version}}-win.zip` for portable use
 
 ### Setup Required
 1. **Google OAuth Setup**: File → Google Credentials Setup
@@ -25,9 +25,9 @@
 
 ## 🔗 Links
 
-- 📖 [Full Documentation](https://github.com/your-username/arcane-stream-scheduler#readme)
-- 🐛 [Report Issues](https://github.com/your-username/arcane-stream-scheduler/issues)
-- 💬 [Discussions](https://github.com/your-username/arcane-stream-scheduler/discussions)
+- 📖 [Full Documentation](https://github.com/your-username/advanced-stream-scheduler#readme)
+- 🐛 [Report Issues](https://github.com/your-username/advanced-stream-scheduler/issues)
+- 💬 [Discussions](https://github.com/your-username/advanced-stream-scheduler/discussions)
 
 ## 📝 Changelog
 
@@ -37,4 +37,4 @@
 
 ---
 
-**Thank you for using Arcane Stream Scheduler!** 🚀
+**Thank you for using Advanced Stream Scheduler!** 🚀
