@@ -47,7 +47,6 @@
         "buildDependenciesFromSource": false,
         "files": [
             "**/*",
-            "!node_modules/**/*",
             "!dist/**/*",
             "!build/**/*",
             "!.git/**/*",
