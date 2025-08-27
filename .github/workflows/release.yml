@@ -26,6 +26,8 @@ jobs:
         
       - name: Build application
         run: npm run dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
       - name: Generate changelog
         id: changelog
@@ -42,6 +44,7 @@ jobs:
             dist/*.exe
             dist/*.msi
             dist/*.zip
+            dist/*.blockmap
           draft: false
           prerelease: false
           body: |
@@ -74,3 +77,4 @@ jobs:
             **Thank you for using Arcane Stream Scheduler!** 🚀
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
