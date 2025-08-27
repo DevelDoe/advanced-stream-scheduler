@@ -41,12 +41,7 @@
         "directories": {
             "output": "dist"
         },
-        "publish": {
-            "provider": "github",
-            "owner": "DevelDoe",
-            "repo": "advanced-stream-scheduler",
-            "private": false
-        },
+        "publish": null,
         "files": [
             "**/*",
             "!node_modules/**/*",
