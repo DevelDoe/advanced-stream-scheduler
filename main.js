@@ -1,5 +1,8 @@
 // main.js
 import { app, BrowserWindow, ipcMain, dialog, Menu } from "electron";
+import pkg from "electron-updater";
+const { autoUpdater } = pkg;
+import electronLog from "electron-log";
 import { startScheduler, restartScheduler, schedulerBus } from "./scheduler.js";
 import {
     loadAuth,
@@ -10,6 +13,8 @@ import {
     transitionBroadcast,
     setBroadcastThumbnail,
     listActiveBroadcasts,
+    checkCredentialsSetup,
+    validateCredentials,
 } from "./youtube_api.js";
 import os from "os";
 import fs from "fs";
@@ -33,6 +38,7 @@ const OBS_CONFIG_PATH = path.join(app.getPath("userData"), "obs_config.json");
 let lastHB = Date.now();
 let actions = [];
 let mainWindow;
+let applicationMenu; // Store reference to menu for updates
 
 schedulerBus.on("heartbeat", () => {
     lastHB = Date.now();
@@ -192,6 +198,8 @@ function saveOBSConfig(config) {
     fs.writeFileSync(OBS_CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
+
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 900,
@@ -212,6 +220,13 @@ function createWindow() {
                         mainWindow?.webContents.send("open.obsSettings");
                     }
                 },
+                {
+                    label: 'Google Credentials Setup',
+                    accelerator: 'CmdOrCtrl+Shift+C',
+                    click: () => {
+                        mainWindow?.webContents.send("open.credentialsSetup");
+                    }
+                },
                 { type: 'separator' },
                 {
                     label: 'Quit',
@@ -226,11 +241,20 @@ function createWindow() {
             label: 'Tools',
             submenu: [
                 {
-                    label: 'Cleanup Orphaned Data',
+                    label: 'Toggle Log Panel (Ctrl+L)',
+                    accelerator: 'CmdOrCtrl+L',
                     click: () => {
-                        cleanupOrphanedData();
+                        mainWindow?.webContents.send("toggle.logPanel");
                     }
                 },
+                {
+                    label: 'Check for Updates',
+                    click: () => {
+                        mainWindow?.webContents.send("scheduler/log", "🔍 Checking for updates...");
+                        autoUpdater.checkForUpdates();
+                    }
+                },
+
                 {
                     label: 'Restart Scheduler',
                     click: () => {
@@ -246,8 +270,8 @@ function createWindow() {
         }
     ];
     
-    const menu = Menu.buildFromTemplate(template);
-    Menu.setApplicationMenu(menu);
+    applicationMenu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(applicationMenu);
 }
 
 function getNextOccurrence(daysOfWeek, baseDate) {
@@ -260,6 +284,56 @@ function getNextOccurrence(daysOfWeek, baseDate) {
 }
 
 app.whenReady().then(async () => {
+    // Configure auto-updater
+    autoUpdater.logger = electronLog;
+    autoUpdater.logger.transports.file.level = 'info';
+    
+    // Check for updates on startup (but don't auto-download)
+    autoUpdater.checkForUpdates();
+    
+    // Auto-updater events
+    autoUpdater.on('checking-for-update', () => {
+        mainWindow?.webContents.send("scheduler/log", "🔍 Checking for updates...");
+    });
+    
+    autoUpdater.on('update-available', (info) => {
+        mainWindow?.webContents.send("scheduler/log", `📦 Update available: ${info.version}`);
+        mainWindow?.webContents.send("update/available", info);
+    });
+    
+    autoUpdater.on('update-not-available', () => {
+        mainWindow?.webContents.send("scheduler/log", "✅ App is up to date");
+    });
+    
+    autoUpdater.on('error', (err) => {
+        mainWindow?.webContents.send("scheduler/log", `❌ Update error: ${err.message}`);
+    });
+    
+    autoUpdater.on('download-progress', (progressObj) => {
+        const percent = Math.round(progressObj.percent);
+        mainWindow?.webContents.send("scheduler/log", `📥 Downloading update: ${percent}%`);
+        mainWindow?.webContents.send("update/progress", progressObj);
+    });
+    
+    autoUpdater.on('update-downloaded', (info) => {
+        mainWindow?.webContents.send("scheduler/log", `✅ Update downloaded: ${info.version}`);
+        mainWindow?.webContents.send("update/downloaded", info);
+        
+        // Ask user if they want to install now
+        dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Update Ready',
+            message: `Update ${info.version} has been downloaded. Would you like to install it now?`,
+            detail: 'The app will restart after installation.',
+            buttons: ['Install Now', 'Later'],
+            defaultId: 0
+        }).then((result) => {
+            if (result.response === 0) {
+                autoUpdater.quitAndInstall();
+            }
+        });
+    });
+
     // Send initial loading states
     mainWindow?.webContents.send("scheduler/loading", { component: "scheduler", status: "loading" });
     mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "loading" });
@@ -277,6 +351,10 @@ app.whenReady().then(async () => {
     actions = loadActions();
     actions.forEach((action) => scheduleOneOffAction(action));
     mainWindow?.webContents.send("scheduler/log", `📋 Loaded ${actions.length} scheduled action(s)`);
+    
+    // Welcome message for new users
+    mainWindow?.webContents.send("scheduler/log", "🎉 Welcome to Arcane Stream Scheduler!");
+    mainWindow?.webContents.send("scheduler/log", "📝 First time? Go to File → Google Credentials Setup to get started.");
 
     // Forward scheduler bus events to renderer
     schedulerBus.on("log", (line) => mainWindow?.webContents.send("scheduler/log", line));
@@ -287,33 +365,10 @@ app.whenReady().then(async () => {
         mainWindow?.webContents.send("scheduler/log", "✅ OBS WebSocket connection established");
     });
 
-    // Test YouTube API connection early
-    setTimeout(async () => {
-        try {
-            const auth = await new Promise((resolve, reject) => {
-                loadAuth((auth) => resolve(auth), reject);
-            });
-            await listActiveBroadcasts(auth);
-            // If we get here, API is working
-            if (!global.__youtubeReady) {
-                global.__youtubeReady = true;
-                mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "ready" });
-                mainWindow?.webContents.send("scheduler/log", "✅ YouTube API connection established");
-            }
-        } catch (error) {
-            // API test failed
-            if (global.__youtubeReady !== false) {
-                global.__youtubeReady = false;
-                mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "error" });
-                mainWindow?.webContents.send("scheduler/log", `❌ YouTube API connection failed: ${error?.message || error}`);
-            }
-        }
-    }, 2000); // 2 second delay for initial API test
 
-    // Clean up orphaned data after a short delay to allow YouTube API to be ready
-    setTimeout(() => {
-        cleanupOrphanedData();
-    }, 5000); // 5 second delay to ensure API is ready
+
+    // Note: Automatic cleanup removed - now only manual cleanup is allowed
+    // This prevents accidentally deleting actions for live broadcasts that haven't been detected yet
 
     schedulerBus.on("action_executed", async (action) => {
         mainWindow?.webContents.send("scheduler/log", `✅ Executed action ${action.type} for broadcast ${action.broadcastId}`);
@@ -321,7 +376,11 @@ app.whenReady().then(async () => {
         if (action.type === "start") {
             // slight buffer so OBS is actually sending data
             setTimeout(() => {
-                loadAuth(async (auth) => {
+                loadAuth(async (auth, error) => {
+                    if (error) {
+                        mainWindow?.webContents.send("scheduler/log", `❌ Go-live after start failed: ${error?.message || error}`);
+                        return;
+                    }
                     try {
                         await goLiveWithRetry(auth, action.broadcastId, /*retries*/ 5, /*delay*/ 10000);
                         mainWindow?.webContents.send("scheduler/log", `📡 Requested LIVE transition for ${action.broadcastId} (after OBS StartStream)`);
@@ -336,7 +395,11 @@ app.whenReady().then(async () => {
             const recurringData = loadRecurring();
             const info = recurringData[action.broadcastId];
             if (info?.recurring) {
-                loadAuth(async (auth) => {
+                loadAuth(async (auth, error) => {
+                    if (error) {
+                        mainWindow?.webContents.send("scheduler/log", `❌ Failed to schedule recurring: ${error?.message || error}`);
+                        return;
+                    }
                     const nextDate = getNextOccurrence(info.days, new Date());
                     const isoNext = nextDate.toISOString();
 
@@ -426,9 +489,86 @@ app.whenReady().then(async () => {
         return { path: p, name: path.basename(p) }; // <- use path.basename, not require()
     });
 
+    // File picker for credentials.json
+    ipcMain.handle("credentials.pick", async () => {
+        const { canceled, filePaths } = await dialog.showOpenDialog({
+            properties: ["openFile"],
+            filters: [{ name: "JSON Files", extensions: ["json"] }],
+            title: "Select Google OAuth Credentials File (credentials.json)"
+        });
+        if (canceled || !filePaths?.length) return { path: null, name: null };
+        const p = filePaths[0];
+        return { path: p, name: path.basename(p) };
+    });
+
+    // Credentials management handlers
+    ipcMain.handle("credentials.checkSetup", async () => {
+        try {
+            const result = await checkCredentialsSetup();
+            return result;
+        } catch (error) {
+            return { setup: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle("credentials.validate", async (_evt, credentialsPath) => {
+        try {
+            return validateCredentials(credentialsPath);
+        } catch (error) {
+            return { valid: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle("credentials.copyToApp", async (_evt, sourcePath) => {
+        try {
+            const targetPath = path.join(app.getPath("userData"), "credentials.json");
+            fs.copyFileSync(sourcePath, targetPath);
+            return { ok: true, path: targetPath };
+        } catch (error) {
+            return { ok: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle("credentials.clearToken", async () => {
+        try {
+            const tokenPath = path.join(app.getPath("userData"), "token.json");
+            if (fs.existsSync(tokenPath)) {
+                fs.unlinkSync(tokenPath);
+            }
+            return { ok: true };
+        } catch (error) {
+            return { ok: false, error: error.message };
+        }
+    });
+
     // Poll YouTube for currently-live broadcasts every 30s
     setInterval(() => {
-        loadAuth(async (auth) => {
+        loadAuth(async (auth, error) => {
+            if (error) {
+                // Mark YouTube API as failed
+                if (global.__youtubeReady !== false) {
+                    global.__youtubeReady = false;
+                    global.__autoCleanupTriggered = false; // Reset auto-cleanup trigger
+                    mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "error" });
+                    
+                    if (error.code === 'CREDENTIALS_MISSING') {
+                        // Don't spam the log with credentials missing messages
+                        if (!global.__credentialsMissingLogged) {
+                            mainWindow?.webContents.send("scheduler/log", "ℹ️ Google OAuth credentials not configured yet. Go to File → Google Credentials Setup to get started.");
+                            global.__credentialsMissingLogged = true;
+                        }
+                    } else {
+                        mainWindow?.webContents.send("scheduler/log", `❌ YouTube API connection failed: ${error?.message || error}`);
+                    }
+                }
+                
+                BrowserWindow.getAllWindows()[0]?.webContents.send("broadcast/status", {
+                    ok: false,
+                    error: error?.message || String(error),
+                });
+                return;
+            }
+
             try {
                 const lives = await listActiveBroadcasts(auth);
                 const liveCount = lives.length;
@@ -453,6 +593,22 @@ app.whenReady().then(async () => {
                     mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "ready" });
                     mainWindow?.webContents.send("scheduler/log", "✅ YouTube API connection established");
                 }
+                
+
+
+                // Auto-trigger cleanup when we have a complete picture of broadcast state
+                if (global.__youtubeReady && !global.__autoCleanupTriggered) {
+                    global.__autoCleanupTriggered = true;
+                    // Small delay to ensure we have the latest broadcast data
+                    setTimeout(async () => {
+                        try {
+                            mainWindow?.webContents.send("scheduler/log", "🧹 Auto-triggering cleanup after broadcast state confirmed...");
+                            await cleanupOrphanedData();
+                        } catch (error) {
+                            mainWindow?.webContents.send("scheduler/log", `⚠️ Auto-cleanup failed: ${error?.message || error}`);
+                        }
+                    }, 2000); // 2 second delay to ensure broadcast data is stable
+                }
 
                 // optional: also log when count changes
                 if (!global.__lastLiveCount || global.__lastLiveCount !== liveCount) {
@@ -463,6 +619,7 @@ app.whenReady().then(async () => {
                 // Mark YouTube API as failed
                 if (global.__youtubeReady !== false) {
                     global.__youtubeReady = false;
+                    global.__autoCleanupTriggered = false; // Reset auto-cleanup trigger
                     mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "error" });
                     mainWindow?.webContents.send("scheduler/log", `❌ YouTube API connection failed: ${err?.message || err}`);
                 }
@@ -475,23 +632,15 @@ app.whenReady().then(async () => {
         });
     }, 30_000);
 
-    // Initial YouTube API test after a short delay
-    setTimeout(() => {
-        loadAuth(async (auth) => {
-            try {
-                await listUpcomingBroadcasts(auth);
-                mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "ready" });
-                mainWindow?.webContents.send("scheduler/log", "✅ YouTube API connection established");
-            } catch (err) {
-                mainWindow?.webContents.send("scheduler/log", `⚠️ YouTube API connection failed: ${err?.message || err}`);
-            }
-        });
-    }, 2000);
 
-    // Periodic cleanup of orphaned data (every 5 minutes)
+
+    // Note: Periodic automatic cleanup removed - now only manual cleanup is allowed
+    // This prevents accidentally deleting actions for live broadcasts
+
+    // Periodic update check (every 6 hours)
     setInterval(() => {
-        cleanupOrphanedData();
-    }, 5 * 60 * 1000);
+        autoUpdater.checkForUpdates();
+    }, 6 * 60 * 60 * 1000);
 });
 
 // List upcoming
@@ -499,7 +648,11 @@ ipcMain.handle(
     "yt.listUpcoming",
     async () =>
         new Promise((resolve, reject) => {
-            loadAuth(async (auth) => {
+            loadAuth(async (auth, error) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
                 try {
                     resolve(await listUpcomingBroadcasts(auth));
                 } catch (e) {
@@ -514,7 +667,11 @@ ipcMain.handle(
     "yt.deleteBroadcast",
     async (_evt, id) =>
         new Promise((resolve, reject) => {
-            loadAuth(async (auth) => {
+            loadAuth(async (auth, error) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
                 try {
                     // ✅ define send first
                     const send = (m) => BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", m);
@@ -560,7 +717,11 @@ ipcMain.handle(
 ipcMain.handle("scheduleStream", async (_evt, payload) => {
     // payload: { title, isoUTC, description, privacy, latency, thumbPath }
     return new Promise((resolve, reject) => {
-        loadAuth(async (auth) => {
+        loadAuth(async (auth, error) => {
+            if (error) {
+                reject(error);
+                return;
+            }
             try {
                 const defaults = loadDefaults();
                 const { title, description, privacy, latency, recurring, days } = payload || {};
@@ -683,7 +844,11 @@ ipcMain.handle("actions.delete", async (_evt, { id }) => {
 // IPC from renderer: request to go live
 ipcMain.handle("yt.goLive", async (_evt, broadcastId) => {
     return new Promise((resolve, reject) => {
-        loadAuth(async (auth) => {
+        loadAuth(async (auth, error) => {
+            if (error) {
+                reject(error);
+                return;
+            }
             try {
                 const res = await goLiveWithRetry(auth, broadcastId);
                 resolve(res);
@@ -694,25 +859,56 @@ ipcMain.handle("yt.goLive", async (_evt, broadcastId) => {
     });
 });
 
-// IPC from renderer: cleanup orphaned data
-ipcMain.handle("cleanup.orphanedData", async () => {
+
+
+// IPC from renderer: check for updates
+ipcMain.handle("update.check", async () => {
     try {
-        global.__manualCleanup = true;
-        await cleanupOrphanedData();
-        global.__manualCleanup = false;
+        autoUpdater.checkForUpdates();
         return { ok: true };
     } catch (error) {
-        global.__manualCleanup = false;
         return { ok: false, error: error?.message || error };
     }
 });
+
+// IPC from renderer: download update
+ipcMain.handle("update.download", async () => {
+    try {
+        autoUpdater.downloadUpdate();
+        return { ok: true };
+    } catch (error) {
+        return { ok: false, error: error?.message || error };
+    }
+});
+
+    // IPC from renderer: install update
+    ipcMain.handle("update.install", async () => {
+        try {
+            autoUpdater.quitAndInstall();
+            return { ok: true };
+        } catch (error) {
+            return { ok: false, error: error?.message || error };
+        }
+    });
+
+    // IPC from renderer: toggle log panel
+    ipcMain.handle("toggle.logPanel", async () => {
+        mainWindow?.webContents.send("toggle.logPanel");
+        return { ok: true };
+    });
 
 // Clean up orphaned actions and recurring data
 async function cleanupOrphanedData() {
     try {
         // Get scheduled broadcasts from YouTube API
         const auth = await new Promise((resolve, reject) => {
-            loadAuth((auth) => resolve(auth), reject);
+            loadAuth((auth, error) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(auth);
+                }
+            });
         });
         
         const scheduledBroadcasts = await listUpcomingBroadcasts(auth);
@@ -753,10 +949,7 @@ async function cleanupOrphanedData() {
         if (orphanedActions.length > 0 || orphanedRecurring.length > 0) {
             BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `✅ Cleanup complete: removed ${orphanedActions.length} actions and ${orphanedRecurring.length} recurring rules`);
         } else {
-            // Only log if it's a manual cleanup (not periodic)
-            if (global.__manualCleanup) {
-                BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `✅ No orphaned data found`);
-            }
+            BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `✅ No orphaned data found`);
         }
         
     } catch (error) {

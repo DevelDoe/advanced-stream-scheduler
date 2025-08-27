@@ -20,13 +20,34 @@ function toast(msg) {
 }
 function rowTemplate(item) {
     const when = item.time ? new Date(item.time).toLocaleString() : "—";
+    
+    // Determine status display
+    let statusText = "";
+    let statusColor = "";
+    if (item.status === "liveStreaming" || item.status === "active") {
+        statusText = "🔴 LIVE";
+        statusColor = "#ff4444";
+    } else if (item.status === "testing") {
+        statusText = "🟡 TESTING";
+        statusColor = "#ffaa00";
+    } else if (item.status === "ready") {
+        statusText = "🟢 READY";
+        statusColor = "#44ff44";
+    } else if (item.status === "created") {
+        statusText = "⚪ CREATED";
+        statusColor = "#888888";
+    }
+    
     return `
-    <li data-id="${item.id}" style="display:flex;flex-direction:column;gap:8px;margin:6px 0;padding:8px;border-radius:8px;background:#191919;">
+    <li data-id="${item.id}" style="display:flex;flex-direction:column;gap:8px;margin:6px 0;padding:8px;border-radius:1px;background:rgba(255,255,255,0.05);">
       <div style="display:flex;gap:8px;align-items:center;">
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title || "—"}</div>
           <div style="opacity:.8">${when} · ${item.privacy || ""}</div>
-          <code style="opacity:.6">${item.id}</code>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <code style="opacity:.6">${item.id}</code>
+            ${statusText ? `<span style="color:${statusColor};font-weight:600;">${statusText}</span>` : ""}
+          </div>
         </div>
         <button class="deleteBroadcastBtn">Delete</button>
         <button class="clearActionsBtn">Clear actions</button>
@@ -48,14 +69,14 @@ function rowTemplate(item) {
 window.addEventListener("DOMContentLoaded", () => {
     // ── refs ───────────────────────────────────────────────────────────────
     const button = document.getElementById("scheduleBtn");
+    const listEl = document.getElementById("upcomingList");
+    const upcomingLoadingEl = document.getElementById("upcomingLoading");
     const logEl = document.getElementById("log");
     const hbEl = document.getElementById("hb");
-    const obsEl = document.getElementById("obsBadge");
-    const ytEl = document.getElementById("ytBadge");
-    const schedEl = document.getElementById("schedBadge");
-    const listEl = document.getElementById("upcoming");
-    const upcomingLoadingEl = document.getElementById("upcomingLoading");
-    const refreshBtn = document.getElementById("refreshBtn");
+    const obsEl = document.getElementById("obs");
+    const ytEl = document.getElementById("youtube");
+    const schedEl = document.getElementById("scheduler");
+    const broadcastEl = document.getElementById("broadcast");
 
     const titleEl = document.getElementById("title");
     const startTimeEl = document.getElementById("startTime");
@@ -66,18 +87,22 @@ window.addEventListener("DOMContentLoaded", () => {
     const thumbPickBtn = document.getElementById("thumbPickBtn");
     const thumbNameEl = document.getElementById("thumbName");
 
-    const broadcastEl = document.getElementById("broadcastBadge");
-
     const recurringChk = document.getElementById("recurringChk");
     const recurringDaysBox = document.getElementById("recurringDays");
 
-    const schedBadge = document.getElementById("schedBadge");
+    // Show/hide recurring days based on checkbox state
+    function updateRecurringDaysVisibility() {
+        if (recurringChk.checked) {
+            recurringDaysBox.classList.add("show");
+        } else {
+            recurringDaysBox.classList.remove("show");
+        }
+    }
 
-    recurringDaysBox.style.display = recurringChk.checked ? "block" : "none";
+    // Initialize visibility
+    updateRecurringDaysVisibility();
 
-    recurringChk?.addEventListener("change", () => {
-        recurringDaysBox.style.display = recurringChk.checked ? "block" : "none";
-    });
+    recurringChk?.addEventListener("change", updateRecurringDaysVisibility);
 
     let isEditing = false;
     let lastHB = 0;
@@ -188,9 +213,9 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     window.electronAPI.onTimezone(({ tz }) => {
-        if (!schedBadge) return;
-        schedBadge.title = `Automation clock (local: ${tz}). Green = running.`;
-        schedBadge.textContent = `OBS Automation: OK (${tz})`; // or keep your existing label
+        if (!schedEl) return;
+        schedEl.title = `Automation clock (local: ${tz}). Green = running.`;
+        schedEl.textContent = `OBS Automation: OK (${tz})`; // or keep your existing label
     });
 
     // ── events from main/scheduler ─────────────────────────────────────────
@@ -233,16 +258,48 @@ window.addEventListener("DOMContentLoaded", () => {
         else setBadge(obsEl, false, "OBS: DOWN");
     });
 
+    // ── log panel toggle ────────────────────────────────────────────────────
+    let logPanelVisible = false;
+    
+    window.electronAPI.onToggleLogPanel(() => {
+        logPanelVisible = !logPanelVisible;
+        const logEl = document.getElementById("log");
+        if (logEl) {
+            logEl.style.display = logPanelVisible ? "block" : "none";
+        }
+    });
+
     // ── broadcast badge ────────────────────────────────────────────────────
+    let activeBroadcastIds = []; // Store active broadcast IDs
+    let lastActiveIdsKey = ""; // Track changes to avoid unnecessary refreshes
+    
     window.electronAPI.onBroadcast((st) => {
         if (!st?.ok) {
             setBadge(broadcastEl, false, `Broadcast: ${st?.error || "FAILED"}`);
+            activeBroadcastIds = []; // Clear active IDs on error
+            lastActiveIdsKey = ""; // Reset key
             return;
         }
         // Prefer polled counts when present
         if (typeof st.liveCount === "number") {
             const label = `LIVE (${st.liveCount})`; // always show count
             setBadge(broadcastEl, st.liveCount > 0, `Broadcast: ${st.liveCount > 0 ? label : "OFFLINE"}`);
+            
+            // Store active broadcast IDs for use in the list
+            if (st.ids && Array.isArray(st.ids)) {
+                const newActiveIdsKey = st.ids.sort().join(","); // Create stable key
+                
+                // Only refresh if the active broadcast IDs have actually changed
+                if (newActiveIdsKey !== lastActiveIdsKey) {
+                    activeBroadcastIds = st.ids;
+                    lastActiveIdsKey = newActiveIdsKey;
+                    // Refresh the list to include active broadcasts
+                    refreshUpcoming();
+                } else {
+                    // Just update the stored IDs without refreshing
+                    activeBroadcastIds = st.ids;
+                }
+            }
         } else {
             // one-off success (e.g., immediately after goLiveWithRetry)
             setBadge(broadcastEl, true, "Broadcast: LIVE (1)");
@@ -259,9 +316,30 @@ window.addEventListener("DOMContentLoaded", () => {
         
         try {
             const items = await window.electronAPI.listUpcoming();
+            
+            // Add active broadcasts that aren't already in the list
+            const existingIds = new Set(items.map(item => item.id));
+            const activeItems = [];
+            
+            for (const activeId of activeBroadcastIds) {
+                if (!existingIds.has(activeId)) {
+                    // Create a placeholder item for active broadcast
+                    activeItems.push({
+                        id: activeId,
+                        title: `🔴 LIVE Broadcast (${activeId})`,
+                        time: new Date().toISOString(), // Current time since it's live
+                        privacy: "public",
+                        status: "active"
+                    });
+                }
+            }
+            
+            // Combine regular items with active items
+            const allItems = [...items, ...activeItems];
+            
             if (listEl) {
-                listEl.innerHTML = items.map(rowTemplate).join("");
-                for (const it of items) {
+                listEl.innerHTML = allItems.map(rowTemplate).join("");
+                for (const it of allItems) {
                     const li = listEl.querySelector(`li[data-id="${it.id}"]`);
                     const ul = li?.querySelector(".existingActions");
                     if (!li || !ul) continue;
@@ -412,35 +490,6 @@ window.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    refreshBtn?.addEventListener("click", () => refreshUpcoming(true));
-    
-    // Cleanup button
-    const cleanupBtn = document.getElementById("cleanupBtn");
-    cleanupBtn?.addEventListener("click", async () => {
-        if (!confirm("This will remove any actions and recurring rules for broadcasts that no longer exist. Continue?")) {
-            return;
-        }
-        
-        try {
-            cleanupBtn.disabled = true;
-            cleanupBtn.textContent = "Cleaning...";
-            
-            const result = await window.electronAPI.cleanupOrphanedData();
-            if (result.ok) {
-                toast("✅ Cleanup completed");
-                await refreshUpcoming(true);
-            } else {
-                toast(`❌ Cleanup failed: ${result.error}`);
-            }
-        } catch (error) {
-            console.error("Cleanup failed:", error);
-            toast("❌ Cleanup failed");
-        } finally {
-            cleanupBtn.disabled = false;
-            cleanupBtn.textContent = "Cleanup Orphaned Data";
-        }
-    });
-
     // ── OBS Settings ─────────────────────────────────────────────────────
     const obsSettingsModal = document.getElementById("obsSettingsModal");
     const obsHost = document.getElementById("obsHost");
@@ -450,6 +499,135 @@ window.addEventListener("DOMContentLoaded", () => {
     const obsTestBtn = document.getElementById("obsTestBtn");
     const obsCancelBtn = document.getElementById("obsCancelBtn");
     const obsSaveBtn = document.getElementById("obsSaveBtn");
+
+    // ── Credentials Setup ─────────────────────────────────────────────────
+    const credentialsModal = document.getElementById("credentialsModal");
+    const credentialsStatusText = document.getElementById("credentialsStatusText");
+    const credentialsStatusDetails = document.getElementById("credentialsStatusDetails");
+    const credentialsSetupSteps = document.getElementById("credentialsSetupSteps");
+    const credentialsPickBtn = document.getElementById("credentialsPickBtn");
+    const credentialsFileName = document.getElementById("credentialsFileName");
+    const credentialsValidation = document.getElementById("credentialsValidation");
+    const credentialsValidationResult = document.getElementById("credentialsValidationResult");
+    const credentialsClearBtn = document.getElementById("credentialsClearBtn");
+    const credentialsTestBtn = document.getElementById("credentialsTestBtn");
+    const credentialsCancelBtn = document.getElementById("credentialsCancelBtn");
+
+    let selectedCredentialsPath = null;
+
+    // Open credentials setup from menu
+    window.electronAPI.onOpenCredentialsSetup(async () => {
+        await updateCredentialsStatus();
+        credentialsModal.style.display = "block";
+    });
+
+    async function updateCredentialsStatus() {
+        try {
+            const status = await window.electronAPI.credentialsCheckSetup();
+            
+            if (status.setup) {
+                credentialsStatusText.textContent = "✅ Ready";
+                credentialsStatusDetails.textContent = "Google OAuth credentials are properly configured and authenticated.";
+                credentialsSetupSteps.style.display = "none";
+            } else {
+                credentialsStatusText.textContent = "❌ Setup Required";
+                credentialsStatusDetails.textContent = status.error;
+                credentialsSetupSteps.style.display = "block";
+            }
+        } catch (error) {
+            credentialsStatusText.textContent = "❌ Error";
+            credentialsStatusDetails.textContent = `Failed to check credentials: ${error.message}`;
+            credentialsSetupSteps.style.display = "block";
+        }
+    }
+
+    // Pick credentials file
+    credentialsPickBtn?.addEventListener("click", async () => {
+        try {
+            const result = await window.electronAPI.credentialsPick();
+            if (result.path) {
+                selectedCredentialsPath = result.path;
+                credentialsFileName.textContent = result.name;
+                
+                // Validate the selected file
+                const validation = await window.electronAPI.credentialsValidate(result.path);
+                credentialsValidation.style.display = "block";
+                
+                if (validation.valid) {
+                    credentialsValidationResult.style.background = "#1e3a1e";
+                    credentialsValidationResult.style.color = "#4ade80";
+                    credentialsValidationResult.textContent = "✅ Valid credentials file";
+                    
+                    // Copy to app directory
+                    const copyResult = await window.electronAPI.credentialsCopyToApp(result.path);
+                    if (copyResult.ok) {
+                        toast("✅ Credentials file copied successfully");
+                        await updateCredentialsStatus();
+                    } else {
+                        toast(`❌ Failed to copy credentials: ${copyResult.error}`);
+                    }
+                } else {
+                    credentialsValidationResult.style.background = "#3a1e1e";
+                    credentialsValidationResult.style.color = "#f87171";
+                    credentialsValidationResult.textContent = `❌ Invalid credentials: ${validation.error}`;
+                }
+            }
+        } catch (error) {
+            console.error("Failed to pick credentials:", error);
+            toast("❌ Failed to select credentials file");
+        }
+    });
+
+    // Test credentials connection
+    credentialsTestBtn?.addEventListener("click", async () => {
+        try {
+            credentialsTestBtn.disabled = true;
+            credentialsTestBtn.textContent = "Testing...";
+            
+            // Try to load upcoming broadcasts to test the connection
+            const items = await window.electronAPI.listUpcoming();
+            toast("✅ Credentials working - connection successful");
+            await updateCredentialsStatus();
+        } catch (error) {
+            console.error("Credentials test failed:", error);
+            toast(`❌ Credentials test failed: ${error.message}`);
+        } finally {
+            credentialsTestBtn.disabled = false;
+            credentialsTestBtn.textContent = "Test Connection";
+        }
+    });
+
+    // Clear stored token
+    credentialsClearBtn?.addEventListener("click", async () => {
+        if (!confirm("This will clear your stored authentication token. You'll need to re-authenticate with Google. Continue?")) {
+            return;
+        }
+        
+        try {
+            const result = await window.electronAPI.credentialsClearToken();
+            if (result.ok) {
+                toast("✅ Authentication token cleared");
+                await updateCredentialsStatus();
+            } else {
+                toast(`❌ Failed to clear token: ${result.error}`);
+            }
+        } catch (error) {
+            console.error("Failed to clear token:", error);
+            toast("❌ Failed to clear token");
+        }
+    });
+
+    // Close credentials modal
+    credentialsCancelBtn?.addEventListener("click", () => {
+        credentialsModal.style.display = "none";
+    });
+
+    // Close modal when clicking outside
+    credentialsModal?.addEventListener("click", (e) => {
+        if (e.target === credentialsModal) {
+            credentialsModal.style.display = "none";
+        }
+    });
 
     // Open OBS settings from menu
     window.electronAPI.onOpenOBSSettings(async () => {

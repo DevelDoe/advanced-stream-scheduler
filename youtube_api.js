@@ -11,19 +11,147 @@ const SCOPES = ["https://www.googleapis.com/auth/youtube", "https://www.googleap
 const REDIRECT_PORT = 4567;
 
 const TOKEN_PATH = path.join(app.getPath("userData"), "token.json");
-const CRED_PATH = app.isPackaged ? path.join(process.resourcesPath, "credentials.json") : path.resolve(process.cwd(), "credentials.json");
+const CRED_PATH = path.join(app.getPath("userData"), "credentials.json");
+
+// Validate credentials file format
+export function validateCredentials(credentialsPath = CRED_PATH) {
+    try {
+        if (!fs.existsSync(credentialsPath)) {
+            return { valid: false, error: "Credentials file not found" };
+        }
+        
+        const credentials = JSON.parse(fs.readFileSync(credentialsPath, "utf-8"));
+        
+        // Check for required fields
+        if (!credentials.installed) {
+            return { valid: false, error: "Invalid credentials format: missing 'installed' section" };
+        }
+        
+        if (!credentials.installed.client_id) {
+            return { valid: false, error: "Invalid credentials format: missing 'client_id'" };
+        }
+        
+        if (!credentials.installed.client_secret) {
+            return { valid: false, error: "Invalid credentials format: missing 'client_secret'" };
+        }
+        
+        return { valid: true, credentials };
+    } catch (error) {
+        return { valid: false, error: `Failed to parse credentials: ${error.message}` };
+    }
+}
+
+// Check if credentials are properly set up
+export function checkCredentialsSetup() {
+    const validation = validateCredentials();
+    if (!validation.valid) {
+        return { setup: false, error: validation.error };
+    }
+    
+    // Check if we have a valid token
+    if (!fs.existsSync(TOKEN_PATH)) {
+        return { setup: false, needsAuth: true, error: "No authentication token found" };
+    }
+    
+    try {
+        const token = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+        if (!token.access_token) {
+            return { setup: false, needsAuth: true, error: "Invalid token format" };
+        }
+        
+        // Test the token by trying to create an OAuth client and make a simple API call
+        const clientData = validation.credentials.installed || validation.credentials.web;
+        const { client_secret, client_id } = clientData;
+        const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, `http://localhost:${REDIRECT_PORT}`);
+        oAuth2Client.setCredentials(token);
+        
+        // Try a simple API call to test if token is still valid
+        // We'll use a lightweight call to test authentication
+        const youtube = google.youtube({ version: 'v3', auth: oAuth2Client });
+        return youtube.channels.list({ part: 'snippet', mine: true })
+            .then(() => {
+                return { setup: true };
+            })
+            .catch((error) => {
+                // Token is invalid or expired
+                if (error.code === 401 || error.message?.includes('unauthorized')) {
+                    // Remove the invalid token
+                    try {
+                        fs.unlinkSync(TOKEN_PATH);
+                    } catch {}
+                    return { setup: false, needsAuth: true, error: "Token expired or invalid. Please re-authenticate." };
+                }
+                // Other API errors (network, etc.) - assume token is valid
+                return { setup: true };
+            });
+    } catch (error) {
+        return { setup: false, needsAuth: true, error: `Token file corrupted: ${error.message}` };
+    }
+}
 
 export function loadAuth(callback) {
-    const credentials = JSON.parse(fs.readFileSync(CRED_PATH, "utf-8"));
-    const { client_secret, client_id } = credentials.installed;
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, `http://localhost:${REDIRECT_PORT}`);
+    try {
+        const validation = validateCredentials();
+        if (!validation.valid) {
+            const error = new Error(`Credentials setup required: ${validation.error}`);
+            error.code = 'CREDENTIALS_MISSING';
+            if (callback) {
+                callback(null, error);
+            } else {
+                throw error;
+            }
+            return;
+        }
+        
+        const clientData = validation.credentials.installed || validation.credentials.web;
+        const { client_secret, client_id } = clientData;
+        const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, `http://localhost:${REDIRECT_PORT}`);
 
-    if (fs.existsSync(TOKEN_PATH)) {
-        const token = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-        oAuth2Client.setCredentials(token);
-        return callback ? callback(oAuth2Client) : oAuth2Client;
-    } else {
-        return getNewToken(oAuth2Client, callback);
+        if (fs.existsSync(TOKEN_PATH)) {
+            try {
+                const token = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+                oAuth2Client.setCredentials(token);
+                
+                // Test if the token is still valid by making a simple API call
+                const youtube = google.youtube({ version: 'v3', auth: oAuth2Client });
+                return youtube.channels.list({ part: 'snippet', mine: true })
+                    .then(() => {
+                        // Token is valid, proceed normally
+                        return callback ? callback(oAuth2Client) : oAuth2Client;
+                    })
+                    .catch((error) => {
+                        // Token is expired or invalid, trigger re-authentication
+                        if (error.code === 401 || error.message?.includes('unauthorized')) {
+                            console.log("🔄 Token expired, triggering re-authentication...");
+                            // Remove the invalid token
+                            try {
+                                fs.unlinkSync(TOKEN_PATH);
+                            } catch {}
+                            return getNewToken(oAuth2Client, callback);
+                        }
+                        // Other API errors, pass through to callback
+                        if (callback) {
+                            callback(null, error);
+                        } else {
+                            throw error;
+                        }
+                    });
+            } catch (error) {
+                // Token file is corrupted, remove it and re-authenticate
+                try {
+                    fs.unlinkSync(TOKEN_PATH);
+                } catch {}
+                return getNewToken(oAuth2Client, callback);
+            }
+        } else {
+            return getNewToken(oAuth2Client, callback);
+        }
+    } catch (error) {
+        if (callback) {
+            callback(null, error);
+        } else {
+            throw error;
+        }
     }
 }
 
@@ -206,23 +334,30 @@ export function scheduleLiveStream(auth, fields) {
 export async function listUpcomingBroadcasts(auth) {
     const yt = google.youtube({ version: "v3", auth });
     try {
+        // Get ALL your broadcasts (no status filter - this gets everything)
         const res = await yt.liveBroadcasts.list({
             part: "id,snippet,status",
-            mine: true,
-            broadcastType: "event",
+            mine: true, // This ensures we only get YOUR broadcasts
             maxResults: 50,
         });
+        
         const items = res.data.items || [];
+        
+        // Filter to include all relevant statuses (including live ones)
         const upcoming = items.filter((b) => {
             const lc = b.status?.lifeCycleStatus;
-            return lc === "created" || lc === "ready";
+            // Include all relevant statuses - this should catch live broadcasts
+            const validStatuses = ["created", "ready", "liveStreaming", "testing", "active"];
+            return validStatuses.includes(lc);
         });
+        
         upcoming.sort((a, b) => new Date(a.snippet?.scheduledStartTime || 0) - new Date(b.snippet?.scheduledStartTime || 0));
         return upcoming.map((b) => ({
             id: b.id,
             title: b.snippet?.title,
             time: b.snippet?.scheduledStartTime,
             privacy: b.status?.privacyStatus,
+            status: b.status?.lifeCycleStatus,
         }));
     } catch (err) {
         const payload = err?.response?.data || err?.errors || err?.message || err;
@@ -253,20 +388,27 @@ export async function transitionBroadcast(auth, broadcastId, status) {
     });
 }
 
-// youtube_api.js
+// Function to get active/live broadcasts for badge status
 export async function listActiveBroadcasts(auth) {
-    const youtube = google.youtube("v3");
-    const res = await youtube.liveBroadcasts.list({
-        auth,
-        part: ["id", "snippet", "status", "contentDetails"],
-        broadcastStatus: "active", // ✅ keep this
-        broadcastType: "all", // optional (event/persistent/all)
-        maxResults: 50,
-        // mine: true,                  // ❌ remove this (mutually exclusive)
-    });
-    return (res.data.items || []).map((b) => ({
-        id: b.id,
-        title: b.snippet?.title,
-        lifeCycleStatus: b.status?.lifeCycleStatus, // live/testing/complete/...
-    }));
+    const youtube = google.youtube({ version: "v3", auth });
+    try {
+        console.log("🔍 Fetching active broadcasts for badge...");
+        const res = await youtube.liveBroadcasts.list({
+            part: "id,snippet,status",
+            broadcastStatus: "active", // This gets only live streams
+            maxResults: 50,
+        });
+        
+        const items = res.data.items || [];
+        console.log(`🔴 Found ${items.length} active broadcasts for badge`);
+        
+        return items.map((b) => ({
+            id: b.id,
+            title: b.snippet?.title,
+            lifeCycleStatus: b.status?.lifeCycleStatus,
+        }));
+    } catch (err) {
+        console.error("❌ listActiveBroadcasts failed:", err);
+        throw err;
+    }
 }

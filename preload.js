@@ -31,13 +31,32 @@ contextBridge.exposeInMainWorld("electronAPI", {
     // Loading states
     onLoading: (cb) => ipcRenderer.on("scheduler/loading", (_e, data) => cb(data)),
 
-    // Cleanup orphaned data
-    cleanupOrphanedData: () => ipcRenderer.invoke("cleanup.orphanedData"),
+
 
     // OBS Settings
     onOpenOBSSettings: (cb) => ipcRenderer.on("open.obsSettings", (_e) => cb()),
     obsLoadConfig: () => ipcRenderer.invoke("obs.loadConfig"),
     obsSaveConfig: (config) => ipcRenderer.invoke("obs.saveConfig", config),
     obsTestConnection: (config) => ipcRenderer.invoke("obs.testConnection", config),
+
+    // Credentials Management
+    onOpenCredentialsSetup: (cb) => ipcRenderer.on("open.credentialsSetup", (_e) => cb()),
+    credentialsCheckSetup: () => ipcRenderer.invoke("credentials.checkSetup"),
+    credentialsValidate: (path) => ipcRenderer.invoke("credentials.validate", path),
+    credentialsPick: () => ipcRenderer.invoke("credentials.pick"),
+    credentialsCopyToApp: (sourcePath) => ipcRenderer.invoke("credentials.copyToApp", sourcePath),
+    credentialsClearToken: () => ipcRenderer.invoke("credentials.clearToken"),
+
+    // Update functions
+    updateCheck: () => ipcRenderer.invoke("update.check"),
+    updateDownload: () => ipcRenderer.invoke("update.download"),
+    updateInstall: () => ipcRenderer.invoke("update.install"),
+    
+    // Log panel toggle
+    toggleLogPanel: () => ipcRenderer.invoke("toggle.logPanel"),
+    onUpdateAvailable: (callback) => ipcRenderer.on("update/available", callback),
+    onUpdateProgress: (callback) => ipcRenderer.on("update/progress", callback),
+    onUpdateDownloaded: (callback) => ipcRenderer.on("update/downloaded", callback),
+    onToggleLogPanel: (callback) => ipcRenderer.on("toggle.logPanel", callback),
 
 });

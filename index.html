@@ -94,18 +94,22 @@
                 overflow: hidden;
             }
             .badge.loading::after {
-                content: '';
+                content: "";
                 position: absolute;
                 top: 0;
                 left: -100%;
                 width: 100%;
                 height: 100%;
-                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+                background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
                 animation: loading-shimmer 1.5s infinite;
             }
             @keyframes loading-shimmer {
-                0% { left: -100%; }
-                100% { left: 100%; }
+                0% {
+                    left: -100%;
+                }
+                100% {
+                    left: 100%;
+                }
             }
             #hb {
                 opacity: 0.7;
@@ -166,8 +170,9 @@
             }
             .meta-inline {
                 display: flex;
-                gap: 10px;
+                gap: 16px;
                 flex-wrap: wrap;
+                align-items: flex-start;
             }
             .meta-inline label {
                 display: inline-flex;
@@ -175,8 +180,13 @@
                 gap: 6px;
                 white-space: nowrap;
             }
+            .meta-inline .recurring {
+                min-width: 200px;
+                flex: 1;
+            }
             #description {
                 min-height: 110px;
+                width: 100%;
             }
 
             .thumb-row {
@@ -229,54 +239,79 @@
                 border: 1px solid var(--border);
             }
 
-            @media (max-width: 900px) {
-                .schedule-grid {
-                    grid-template-columns: 1fr;
-                }
+            .schedule-grid {
+                grid-template-columns: 1fr;
             }
+
             .recurring {
                 display: flex;
                 flex-direction: column;
-                gap: 6px;
+                gap: 8px;
+                width: 100%;
             }
-            #recurringDays {
-                display: none; /* hidden by default */
-                margin-left: 20px;
-                padding: 6px 8px;
+            .recurring-toggle {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 5px 10px;
                 background: var(--chip);
                 border: 1px solid var(--border);
                 border-radius: 1px;
-            }
-            #recurringDays label {
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                margin-right: 8px;
-                white-space: nowrap;
-                font-size: 13px;
-            }
-            #recurringDays input[type="checkbox"] {
-                accent-color: var(--accent); /* consistent blue check */
-            }
-            .recurring label {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                background: #101010;
-                border: 1px solid var(--border);
-                border-radius: 1px;
-                padding: 6px 12px;
                 cursor: pointer;
+                transition: all 0.2s ease;
                 user-select: none;
-                height: 32px; /* match select */
             }
-
-            .recurring input[type="checkbox"] {
-                margin-right: 6px;
+            .recurring-toggle:hover {
+                background: #2a2a2a;
+                border-color: var(--accent);
+            }
+            .recurring-toggle:has(input:checked) {
+                background: var(--accent-2);
+                border-color: var(--accent);
+            }
+            .recurring-toggle input[type="checkbox"] {
                 accent-color: var(--accent);
                 transform: scale(1.1);
             }
-            
+            #recurringDays {
+                display: none; /* hidden by default */
+                padding: 12px;
+                background: var(--chip);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                margin-top: 4px;
+            }
+            #recurringDays.show {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                align-items: center;
+            }
+            #recurringDays label {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 10px;
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                font-size: 13px;
+                user-select: none;
+            }
+            #recurringDays label:hover {
+                background: #2a2a2a;
+                border-color: var(--accent);
+            }
+            #recurringDays input[type="checkbox"] {
+                accent-color: var(--accent);
+                transform: scale(1.1);
+            }
+            #recurringDays input[type="checkbox"]:checked + span {
+                color: var(--accent);
+                font-weight: 600;
+            }
         </style>
     </head>
     <body>
@@ -284,56 +319,40 @@
             <h1>Arcane Stream Scheduler</h1>
 
             <div id="status" class="badges">
-                <span id="schedBadge" class="badge loading" title="Automation clock. Green = automation clock is running."> OBS Automation: Loading... </span>
-                <span id="ytBadge" class="badge loading" title="YouTube API. Green = API connection is working (auth + API OK)."> YouTube API: Loading... </span>
-                <span id="obsBadge" class="badge loading" title="OBS WebSocket. Green = OBS is running and reachable."> OBS Connection: Loading... </span>
-                <span id="broadcastBadge" class="badge loading" title="Broadcast live state. Green = YouTube stream is LIVE."> YouTube Broadcast: Loading... </span>
-                <span id="hb" style="display: none" title="Raw heartbeat timestamp (debug only)."> HB: — </span>
+                <div id="scheduler" class="badge loading">Scheduler: Loading...</div>
+                <div id="youtube" class="badge loading">YouTube API: Loading...</div>
+                <div id="obs" class="badge loading">OBS: Loading...</div>
+                <div id="broadcast" class="badge loading">Broadcast: Loading...</div>
             </div>
 
-            <div style="margin: 8px 0; display: flex; gap: 8px;">
-                <button id="refreshBtn">Refresh Upcoming</button>
-                <button id="cleanupBtn" class="btn-danger">Cleanup Orphaned Data</button>
+            <div id="upcomingLoading" style="display: none; text-align: center; padding: 20px">
+                <div>Loading upcoming broadcasts...</div>
             </div>
+            <ul id="upcomingList"></ul>
 
-            <div id="upcomingLoading" style="text-align: center; padding: 20px; color: #888;">
-                <div style="margin-bottom: 10px;">Loading scheduled streams...</div>
-                <div style="width: 40px; height: 4px; background: #333; margin: 0 auto; border-radius: 2px; overflow: hidden;">
-                    <div style="width: 100%; height: 100%; background: #4aa3ff; animation: loading-bar 1.5s infinite;"></div>
-                </div>
-            </div>
-            <ul id="upcoming" style="display: none;"></ul>
-            
             <style>
                 @keyframes loading-bar {
-                    0% { transform: translateX(-100%); }
-                    100% { transform: translateX(100%); }
+                    0% {
+                        transform: translateX(-100%);
+                    }
+                    100% {
+                        transform: translateX(100%);
+                    }
                 }
             </style>
 
             <!-- Scheduling form -->
             <div class="schedule-grid">
                 <div class="schedule-row">
-                    <input id="title" placeholder="Stream title" style="flex: 1" value="Momentum Market Scanner Arcane v4.1 Lore | No Paywall" />
+                    <input id="title" placeholder="Stream title" style="flex: 1" />
                     <input id="startTime" type="datetime-local" />
                     <button id="scheduleBtn">Schedule Stream</button>
                 </div>
 
-                <div class="recurring">
-                    <label><input type="checkbox" id="recurringChk" /> Recurring</label>
-                    <div id="recurringDays">
-                        <label><input type="checkbox" value="1" /> Mon</label>
-                        <label><input type="checkbox" value="2" /> Tue</label>
-                        <label><input type="checkbox" value="3" /> Wed</label>
-                        <label><input type="checkbox" value="4" /> Thu</label>
-                        <label><input type="checkbox" value="5" /> Fri</label>
-                        <label><input type="checkbox" value="6" /> Sat</label>
-                        <label><input type="checkbox" value="0" /> Sun</label>
-                    </div>
-                </div>
+               
 
                 <div class="meta-row">
-                    <textarea id="description" rows="10" placeholder="Description"></textarea>
+                    <textarea id="description" rows="10" style="width: 100%" placeholder="Description"></textarea>
 
                     <div class="meta-inline">
                         <label
@@ -353,52 +372,145 @@
                                 <option value="normal">Normal</option>
                             </select>
                         </label>
+                        <div class="recurring">
+                            <div class="recurring-toggle">
+                                <input type="checkbox" id="recurringChk" />
+                                <span>🔄 Recurring Stream</span>
+                            </div>
+                            <div id="recurringDays">
+                                <label><input type="checkbox" value="1" /><span>Mon</span></label>
+                                <label><input type="checkbox" value="2" /><span>Tue</span></label>
+                                <label><input type="checkbox" value="3" /><span>Wed</span></label>
+                                <label><input type="checkbox" value="4" /><span>Thu</span></label>
+                                <label><input type="checkbox" value="5" /><span>Fri</span></label>
+                                <label><input type="checkbox" value="6" /><span>Sat</span></label>
+                                <label><input type="checkbox" value="0" /><span>Sun</span></label>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="thumb-row">
                         <button id="thumbPickBtn" type="button">Choose Thumbnail</button>
                         <span id="thumbName">No previous thumbnail</span>
                     </div>
+
+                    <!-- <div class="recurring">
+                        <label><input type="checkbox" id="recurringChk" /> Recurring</label>
+                        <div id="recurringDays">
+                            <label><input type="checkbox" value="1" /> Mon</label>
+                            <label><input type="checkbox" value="2" /> Tue</label>
+                            <label><input type="checkbox" value="3" /> Wed</label>
+                            <label><input type="checkbox" value="4" /> Thu</label>
+                            <label><input type="checkbox" value="5" /> Fri</label>
+                            <label><input type="checkbox" value="6" /> Sat</label>
+                            <label><input type="checkbox" value="0" /> Sun</label>
+                        </div>
+                    </div> -->
                 </div>
             </div>
 
             <div id="toast"></div>
-            <pre id="log"></pre>
+            <pre id="log" style="display: none"></pre>
         </div>
 
         <!-- OBS Settings Modal -->
-        <div id="obsSettingsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000;">
-            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 24px; min-width: 400px;">
-                <h2 style="margin: 0 0 20px 0;">OBS WebSocket Settings</h2>
-                
-                <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div id="obsSettingsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 1000">
+            <div
+                style="
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: var(--panel);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 24px;
+                    min-width: 400px;
+                "
+            >
+                <h2 style="margin: 0 0 20px 0">OBS WebSocket Settings</h2>
+
+                <div style="display: flex; flex-direction: column; gap: 16px">
                     <div>
-                        <label style="display: block; margin-bottom: 4px;">Host:</label>
-                        <input id="obsHost" type="text" placeholder="localhost" style="width: 100%;" />
+                        <label style="display: block; margin-bottom: 4px">Host:</label>
+                        <input id="obsHost" type="text" placeholder="localhost" style="width: 100%" />
                     </div>
-                    
+
                     <div>
-                        <label style="display: block; margin-bottom: 4px;">Port:</label>
-                        <input id="obsPort" type="number" placeholder="4455" style="width: 100%;" />
+                        <label style="display: block; margin-bottom: 4px">Port:</label>
+                        <input id="obsPort" type="number" placeholder="4455" style="width: 100%" />
                     </div>
-                    
+
                     <div>
-                        <label style="display: block; margin-bottom: 4px;">Password (optional):</label>
-                        <input id="obsPassword" type="password" placeholder="Leave empty if no password" style="width: 100%;" />
+                        <label style="display: block; margin-bottom: 4px">Password (optional):</label>
+                        <input id="obsPassword" type="password" placeholder="Leave empty if no password" style="width: 100%" />
                     </div>
-                    
+
                     <div>
-                        <label style="display: flex; align-items: center; gap: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px">
                             <input id="obsEnabled" type="checkbox" checked />
                             Enable OBS WebSocket connection
                         </label>
                     </div>
-                    
-                    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;">
-                        <button id="obsTestBtn" style="background: #2a2a2a;">Test Connection</button>
+
+                    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px">
+                        <button id="obsTestBtn" style="background: #2a2a2a">Test Connection</button>
                         <button id="obsCancelBtn">Cancel</button>
-                        <button id="obsSaveBtn" style="background: var(--accent);">Save</button>
+                        <button id="obsSaveBtn" style="background: var(--accent)">Save</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Credentials Setup Modal -->
+        <div id="credentialsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 1000">
+            <div
+                style="
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: var(--panel);
+                    border: 1px solid var(--border);
+                    border-radius: 0px;
+                    padding: 24px;
+                    min-width: 500px;
+                    max-width: 600px;
+                "
+            >
+                <h2 style="margin: 0 0 20px 0">Google OAuth Credentials Setup</h2>
+
+                <div id="credentialsStatus" style="margin-bottom: 20px; padding: 12px; border-radius: 4px; background: #2a2a2a">
+                    <div style="font-weight: bold; margin-bottom: 8px">Status: <span id="credentialsStatusText">Checking...</span></div>
+                    <div id="credentialsStatusDetails" style="font-size: 13px; opacity: 0.8"></div>
+                </div>
+
+                <div id="credentialsSetupSteps" style="display: none">
+                    <h3 style="margin: 0 0 16px 0">Setup Steps:</h3>
+                    <ol style="margin: 0 0 20px 0; padding-left: 20px; line-height: 1.6">
+                        <li>Go to <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--accent)">Google Cloud Console</a></li>
+                        <li>Create a new project or select an existing one</li>
+                        <li>Enable the YouTube Data API v3</li>
+                        <li>Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client IDs"</li>
+                        <li>Choose "Desktop application" as the application type</li>
+                        <li>Download the credentials file (it will have a random name like "client_secret_123456789-abcdefghijklmnop.apps.googleusercontent.com.json")</li>
+                        <li>Select the downloaded file below (you don't need to rename it)</li>
+                    </ol>
+
+                    <div style="margin-bottom: 16px">
+                        <button id="credentialsPickBtn" style="background: var(--accent)">Select Credentials File</button>
+                        <span id="credentialsFileName" style="margin-left: 12px; opacity: 0.8">No file selected</span>
+                    </div>
+
+                    <div id="credentialsValidation" style="display: none; margin-bottom: 16px">
+                        <div id="credentialsValidationResult" style="padding: 8px; border-radius: 4px"></div>
+                    </div>
+                </div>
+
+                <div id="credentialsActions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px">
+                    <button id="credentialsClearBtn" style="background: #2a1a1a">Clear Token</button>
+                    <button id="credentialsTestBtn" style="background: #2a2a2a">Test Connection</button>
+                    <button id="credentialsCancelBtn">Close</button>
                 </div>
             </div>
         </div>

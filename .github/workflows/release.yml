@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Build application
+        run: npm run dist
+        
+      - name: Generate changelog
+        id: changelog
+        run: |
+          node scripts/changelog.js ${{ github.event.ref_name }} HEAD > changelog.txt
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat changelog.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/*.exe
+            dist/*.msi
+            dist/*.zip
+          draft: false
+          prerelease: false
+          body: |
+            ## 🎉 What's New
+            
+            <!-- Describe the main features and improvements in this release -->
+            
+            ## 📝 Changelog
+            
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ## 📋 Installation
+            
+            ### Windows
+            - **Installer**: Download the `.exe` file for automatic installation
+            - **Portable**: Download the `.zip` file for portable use
+            
+            ### Setup Required
+            1. **Google OAuth Setup**: File → Google Credentials Setup
+            2. **OBS Configuration**: File → OBS Settings
+            3. **First Stream**: Schedule your first stream!
+            
+            ## 🔗 Links
+            
+            - 📖 [Full Documentation](https://github.com/${{ github.repository }}#readme)
+            - 🐛 [Report Issues](https://github.com/${{ github.repository }}/issues)
+            
+            ---
+            
+            **Thank you for using Arcane Stream Scheduler!** 🚀
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
