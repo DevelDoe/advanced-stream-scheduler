@@ -9,6 +9,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Debug: Add console output to see if script is running
+console.log('🚀 Publish script starting...');
+
 // Colors for console output
 const colors = {
     reset: '\x1b[0m',
@@ -82,8 +85,12 @@ function pushToGitHub(version) {
 }
 
 function main() {
+    console.log('📋 Main function starting...');
     const args = process.argv.slice(2);
     const type = args[0] || 'patch';
+    
+    console.log(`📋 Args: ${JSON.stringify(args)}`);
+    console.log(`📋 Type: ${type}`);
     
     if (!['patch', 'minor', 'major'].includes(type)) {
         log('❌ Invalid version type. Use: patch, minor, or major', 'red');
@@ -112,6 +119,6 @@ function main() {
 }
 
 // ES module equivalent of require.main === module
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main();
-}
+// Simplified check - just call main() since this script is meant to be run directly
+console.log('📋 Script is main module, calling main()...');
+main();
