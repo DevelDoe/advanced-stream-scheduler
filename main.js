@@ -248,6 +248,13 @@ function createWindow() {
                     }
                 },
                 {
+                    label: 'Open DevTools',
+                    accelerator: 'F12',
+                    click: () => {
+                        mainWindow?.webContents.openDevTools();
+                    }
+                },
+                {
                     label: 'Check for Updates',
                     click: () => {
                         mainWindow?.webContents.send("scheduler/log", "🔍 Checking for updates...");
