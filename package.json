@@ -43,6 +43,8 @@
         },
         "publish": null,
         "asar": true,
+        "npmRebuild": false,
+        "buildDependenciesFromSource": false,
         "files": [
             "**/*",
             "!node_modules/**/*",
@@ -51,6 +53,7 @@
             "!.git/**/*",
             "!*.log"
         ],
+
         "win": {
             "target": [
                 {
