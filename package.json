@@ -41,7 +41,12 @@
         "directories": {
             "output": "dist"
         },
-        "publish": null,
+        "publish": {
+            "provider": "github",
+            "owner": "DevelDoe",
+            "repo": "advanced-stream-scheduler",
+            "releaseType": "release"
+        },
         "asar": true,
         "npmRebuild": false,
         "buildDependenciesFromSource": false,
