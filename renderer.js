@@ -53,7 +53,6 @@ window.addEventListener("DOMContentLoaded", () => {
     const startTimeEl = document.getElementById("startTime");
     const descEl = document.getElementById("description");
     const visEl = document.getElementById("visibility");
-    const tagsEl = document.getElementById("tags");
     const latencyEl = document.getElementById("latency");
 
     const thumbPickBtn = document.getElementById("thumbPickBtn");
@@ -86,7 +85,6 @@ window.addEventListener("DOMContentLoaded", () => {
             if (d.title) titleEl.value = d.title;
             if (typeof d.description === "string") descEl.value = d.description;
             if (d.privacy) visEl.value = d.privacy;
-            if (Array.isArray(d.tags)) tagsEl.value = d.tags.join(", ");
             if (d.latency) latencyEl.value = d.latency;
 
             if (d.thumbPath) {
@@ -121,10 +119,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
         const description = descEl.value || "";
         const privacy = visEl.value || "public";
-        const tags = (tagsEl.value || "")
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
         const latency = latencyEl.value || "ultraLow";
         const thumbPathToUse = chosenThumbPath || lastThumbPath || undefined;
 
@@ -136,7 +130,6 @@ window.addEventListener("DOMContentLoaded", () => {
             await window.electronAPI.scheduleStream(title, isoUTC, {
                 description,
                 privacy,
-                tags,
                 latency,
                 thumbPath: thumbPathToUse,
                 recurring,

@@ -147,7 +147,6 @@ export function scheduleLiveStream(auth, fields) {
         startTime,
         description = "",
         privacy = "public", // "public" | "unlisted" | "private"
-        tags = [], // array of strings
         latency = "ultraLow", // "normal" | "low" | "ultraLow"
     } = fields || {};
 
@@ -173,7 +172,7 @@ export function scheduleLiveStream(auth, fields) {
         .insert({
             part: "snippet,status,contentDetails",
             requestBody: {
-                snippet: { title: safeTitle, description, scheduledStartTime: isoStart, tags: Array.isArray(tags) ? tags : [] },
+                snippet: { title: safeTitle, description, scheduledStartTime: isoStart },
                 status: { privacyStatus: privacy },
                 contentDetails: {
                     monitorStream: { enableMonitorStream: false },

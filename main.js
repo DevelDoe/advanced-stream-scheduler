@@ -227,14 +227,13 @@ app.whenReady().then(() => {
                     const nextDate = getNextOccurrence(info.days, new Date());
                     const isoNext = nextDate.toISOString();
 
-                    const { title, description, privacy, tags, latency, thumbPath } = info.meta || {};
+                    const { title, description, privacy, latency, thumbPath } = info.meta || {};
                     try {
                         const nextResult = await scheduleLiveStream(auth, {
                             title: title || "Recurring Stream",
                             startTime: isoNext,
                             description: description || "",
                             privacy: privacy || "public",
-                            tags: Array.isArray(tags) ? tags : [],
                             latency: latency || "ultraLow",
                         });
                         await bindBroadcastToDefaultStream(auth, nextResult.id);
@@ -378,12 +377,12 @@ ipcMain.handle(
 );
 
 ipcMain.handle("scheduleStream", async (_evt, payload) => {
-    // payload: { title, isoUTC, description, privacy, tags, latency, thumbPath }
+    // payload: { title, isoUTC, description, privacy, latency, thumbPath }
     return new Promise((resolve, reject) => {
         loadAuth(async (auth) => {
             try {
                 const defaults = loadDefaults();
-                const { title, description, privacy, tags, latency, recurring, days } = payload || {};
+                const { title, description, privacy, latency, recurring, days } = payload || {};
                 // use new thumb if provided, else reuse last saved
                 const thumbPath = payload?.thumbPath || defaults?.thumbPath;
                 console.log("[scheduleStream] thumbPath received:", thumbPath);
@@ -395,7 +394,6 @@ ipcMain.handle("scheduleStream", async (_evt, payload) => {
                     startTime: payload.isoUTC,
                     description,
                     privacy,
-                    tags,
                     latency,
                 });
 
@@ -427,7 +425,7 @@ ipcMain.handle("scheduleStream", async (_evt, payload) => {
                         days,
                         baseTime: payload.isoUTC,
                         // keep the metadata to clone:
-                        meta: { title, description, privacy, tags, latency, thumbPath },
+                        meta: { title, description, privacy, latency, thumbPath },
                     };
                     saveRecurring(recurringData);
                     mainWindow?.webContents.send("scheduler/log", `🔁 Recurring enabled for ${result.id} (${days.join(",")})`);
@@ -455,7 +453,7 @@ ipcMain.handle("scheduleStream", async (_evt, payload) => {
                 }
 
                 // 5) persist latest defaults INCLUDING thumbnail path
-                saveDefaults({ title, description, privacy, tags, latency, thumbPath });
+                saveDefaults({ title, description, privacy, latency, thumbPath });
 
                 resolve(scheduledPayload);
             } catch (e) {

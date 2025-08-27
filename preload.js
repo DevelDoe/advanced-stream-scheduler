@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
-    // FORWARD EXTRAS (description/privacy/tags/latency/thumbPath)
+    // FORWARD EXTRAS (description/privacy/latency/thumbPath)
     scheduleStream: (title, isoUTC, extras = {}) => ipcRenderer.invoke("scheduleStream", { title, isoUTC, ...extras }),
 
     listUpcoming: () => ipcRenderer.invoke("yt.listUpcoming"),
