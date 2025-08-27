@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { execSync } = require('child_process');
+import { execSync } from 'child_process';
 
 function getChangelog(fromTag, toTag = 'HEAD') {
     try {
@@ -28,6 +28,7 @@ function main() {
     console.log(changelog);
 }
 
-if (require.main === module) {
+// ES module equivalent of require.main === module
+if (import.meta.url === `file://${process.argv[1]}`) {
     main();
 }
