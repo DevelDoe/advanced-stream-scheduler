@@ -87,6 +87,26 @@
                 align-items: center;
                 gap: 6px;
             }
+            .badge.loading {
+                background: #2a2a2a;
+                color: #888;
+                position: relative;
+                overflow: hidden;
+            }
+            .badge.loading::after {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+                animation: loading-shimmer 1.5s infinite;
+            }
+            @keyframes loading-shimmer {
+                0% { left: -100%; }
+                100% { left: 100%; }
+            }
             #hb {
                 opacity: 0.7;
             }
@@ -264,18 +284,32 @@
             <h1>Arcane Stream Scheduler</h1>
 
             <div id="status" class="badges">
-                <span id="schedBadge" class="badge" title="Automation clock. Green = automation clock is running."> OBS Automation: — </span>
-                <span id="ytBadge" class="badge" style="display: none" title="YouTube API. Green = broadcast scheduler is working (auth + API OK)."> YouTube Scheduler: — </span>
-                <span id="obsBadge" class="badge" title="OBS WebSocket. Green = OBS is running and reachable."> OBS Connection: — </span>
-                <span id="broadcastBadge" class="badge" title="Broadcast live state. Green = YouTube stream is LIVE."> YouTube Broadcast: — </span>
+                <span id="schedBadge" class="badge loading" title="Automation clock. Green = automation clock is running."> OBS Automation: Loading... </span>
+                <span id="ytBadge" class="badge loading" title="YouTube API. Green = API connection is working (auth + API OK)."> YouTube API: Loading... </span>
+                <span id="obsBadge" class="badge loading" title="OBS WebSocket. Green = OBS is running and reachable."> OBS Connection: Loading... </span>
+                <span id="broadcastBadge" class="badge loading" title="Broadcast live state. Green = YouTube stream is LIVE."> YouTube Broadcast: Loading... </span>
                 <span id="hb" style="display: none" title="Raw heartbeat timestamp (debug only)."> HB: — </span>
             </div>
 
-            <div style="margin: 8px 0">
+            <div style="margin: 8px 0; display: flex; gap: 8px;">
                 <button id="refreshBtn">Refresh Upcoming</button>
+                <button id="cleanupBtn" class="btn-danger">Cleanup Orphaned Data</button>
             </div>
 
-            <ul id="upcoming"></ul>
+            <div id="upcomingLoading" style="text-align: center; padding: 20px; color: #888;">
+                <div style="margin-bottom: 10px;">Loading scheduled streams...</div>
+                <div style="width: 40px; height: 4px; background: #333; margin: 0 auto; border-radius: 2px; overflow: hidden;">
+                    <div style="width: 100%; height: 100%; background: #4aa3ff; animation: loading-bar 1.5s infinite;"></div>
+                </div>
+            </div>
+            <ul id="upcoming" style="display: none;"></ul>
+            
+            <style>
+                @keyframes loading-bar {
+                    0% { transform: translateX(-100%); }
+                    100% { transform: translateX(100%); }
+                }
+            </style>
 
             <!-- Scheduling form -->
             <div class="schedule-grid">

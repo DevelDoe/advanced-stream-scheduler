@@ -60,6 +60,12 @@ async function probeOBSOnce() {
         const ver = await obs.call("GetVersion");
         schedulerBus.emit("obs_status", { ok: true, version: ver?.obsVersion });
         await obs.disconnect();
+        
+        // Mark OBS as ready on first successful connection
+        if (!global.__obsReady) {
+            global.__obsReady = true;
+            schedulerBus.emit("obs_ready");
+        }
     } catch (e) {
         schedulerBus.emit("obs_status", { ok: false, error: e?.message || String(e) });
     }

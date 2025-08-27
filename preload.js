@@ -28,4 +28,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
     onTimezone: (cb) => ipcRenderer.on("scheduler/timezone", (_e, p) => cb(p)),
 
+    // Loading states
+    onLoading: (cb) => ipcRenderer.on("scheduler/loading", (_e, data) => cb(data)),
+
+    // Cleanup orphaned data
+    cleanupOrphanedData: () => ipcRenderer.invoke("cleanup.orphanedData"),
+
 });

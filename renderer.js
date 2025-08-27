@@ -2,7 +2,14 @@
 function setBadge(el, ok, text) {
     if (!el) return;
     el.textContent = text;
-    el.style.background = ok ? "#1e8e3e" : "#8e1e1e";
+    el.classList.remove('loading');
+    if (ok === 'loading') {
+        el.style.background = "#2a2a2a";
+        el.style.color = "#888";
+    } else {
+        el.style.background = ok ? "#1e8e3e" : "#8e1e1e";
+        el.style.color = "#eaeff5";
+    }
 }
 function toast(msg) {
     const t = document.getElementById("toast");
@@ -47,6 +54,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const ytEl = document.getElementById("ytBadge");
     const schedEl = document.getElementById("schedBadge");
     const listEl = document.getElementById("upcoming");
+    const upcomingLoadingEl = document.getElementById("upcomingLoading");
     const refreshBtn = document.getElementById("refreshBtn");
 
     const titleEl = document.getElementById("title");
@@ -136,11 +144,48 @@ window.addEventListener("DOMContentLoaded", () => {
                 days,
             });
         } catch (e) {
-            setBadge(ytEl, false, "YouTube: Error");
+            setBadge(ytEl, false, "YouTube API: Error");
             toast("❌ Schedule error (check logs)");
             console.error(e);
         }
     });
+
+    // Loading state handler
+    window.electronAPI.onLoading(({ component, status }) => {
+        if (status === "loading") {
+            setBadge(getBadgeForComponent(component), "loading", `${getBadgeTextForComponent(component)}: Loading...`);
+        } else if (status === "ready") {
+            // Component is ready - set appropriate status
+            if (component === "youtube") {
+                setBadge(ytEl, true, "YouTube API: OK");
+            }
+        } else if (status === "error") {
+            // Component failed - set error status
+            if (component === "youtube") {
+                setBadge(ytEl, false, "YouTube API: Error");
+            }
+        }
+    });
+
+    function getBadgeForComponent(component) {
+        switch (component) {
+            case "scheduler": return schedEl;
+            case "youtube": return ytEl;
+            case "obs": return obsEl;
+            case "broadcast": return broadcastEl;
+            default: return null;
+        }
+    }
+
+    function getBadgeTextForComponent(component) {
+        switch (component) {
+            case "scheduler": return "OBS Automation";
+            case "youtube": return "YouTube API";
+            case "obs": return "OBS Connection";
+            case "broadcast": return "YouTube Broadcast";
+            default: return "Unknown";
+        }
+    }
 
     window.electronAPI.onTimezone(({ tz }) => {
         if (!schedBadge) return;
@@ -150,7 +195,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
     // ── events from main/scheduler ─────────────────────────────────────────
     window.electronAPI.onScheduled(({ id, title, time, streamId, ingestionAddress, streamName }) => {
-        setBadge(ytEl, true, "YouTube Scheduler: Scheduled");
         toast(`📅 Scheduled: ${title} — ${new Date(time).toLocaleString()}`);
         if (logEl) {
             logEl.textContent += `SCHEDULED #${id} (stream ${streamId}) @ ${time}\n`;
@@ -208,6 +252,11 @@ window.addEventListener("DOMContentLoaded", () => {
     // ── list + actions ─────────────────────────────────────────────────────
     async function refreshUpcoming(force = false) {
         if (isEditing && !force) return true;
+        
+        // Show loading state
+        if (upcomingLoadingEl) upcomingLoadingEl.style.display = "block";
+        if (listEl) listEl.style.display = "none";
+        
         try {
             const items = await window.electronAPI.listUpcoming();
             if (listEl) {
@@ -232,10 +281,20 @@ window.addEventListener("DOMContentLoaded", () => {
                     }
                 }
             }
+            
+            // Hide loading, show content
+            if (upcomingLoadingEl) upcomingLoadingEl.style.display = "none";
+            if (listEl) listEl.style.display = "block";
+            
             return true;
         } catch (e) {
             console.error(e);
             toast("❌ Failed to load upcoming");
+            
+            // Hide loading even on error
+            if (upcomingLoadingEl) upcomingLoadingEl.style.display = "none";
+            if (listEl) listEl.style.display = "block";
+            
             return false;
         }
     }
@@ -354,5 +413,33 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     refreshBtn?.addEventListener("click", () => refreshUpcoming(true));
+    
+    // Cleanup button
+    const cleanupBtn = document.getElementById("cleanupBtn");
+    cleanupBtn?.addEventListener("click", async () => {
+        if (!confirm("This will remove any actions and recurring rules for broadcasts that no longer exist. Continue?")) {
+            return;
+        }
+        
+        try {
+            cleanupBtn.disabled = true;
+            cleanupBtn.textContent = "Cleaning...";
+            
+            const result = await window.electronAPI.cleanupOrphanedData();
+            if (result.ok) {
+                toast("✅ Cleanup completed");
+                await refreshUpcoming(true);
+            } else {
+                toast(`❌ Cleanup failed: ${result.error}`);
+            }
+        } catch (error) {
+            console.error("Cleanup failed:", error);
+            toast("❌ Cleanup failed");
+        } finally {
+            cleanupBtn.disabled = false;
+            cleanupBtn.textContent = "Cleanup Orphaned Data";
+        }
+    });
+    
     refreshUpcoming();
 });
