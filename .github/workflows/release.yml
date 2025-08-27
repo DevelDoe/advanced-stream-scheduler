@@ -49,6 +49,7 @@ jobs:
             dist/*.msi
             dist/*.zip
             dist/*.blockmap
+            dist/*.yml
           draft: false
           prerelease: false
           body: |
