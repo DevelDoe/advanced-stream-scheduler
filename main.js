@@ -1,5 +1,5 @@
 // main.js
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Menu } from "electron";
 import { startScheduler, restartScheduler, schedulerBus } from "./scheduler.js";
 import {
     loadAuth,
@@ -28,6 +28,7 @@ const ACTIONS_PATH = path.join(app.getPath("userData"), "actions.json");
 const DEFAULTS_PATH = path.join(app.getPath("userData"), "upload_defaults.json");
 const SCENE_FLOW_PATH = path.join(app.getPath("userData"), "scene_flow.json");
 const RECURRING_PATH = path.join(app.getPath("userData"), "recurring.json");
+const OBS_CONFIG_PATH = path.join(app.getPath("userData"), "obs_config.json");
 
 let lastHB = Date.now();
 let actions = [];
@@ -173,6 +174,24 @@ function saveRecurring(obj) {
     fs.writeFileSync(RECURRING_PATH, JSON.stringify(obj, null, 2));
 }
 
+// OBS Configuration
+function loadOBSConfig() {
+    try {
+        return JSON.parse(fs.readFileSync(OBS_CONFIG_PATH, "utf-8"));
+    } catch {
+        return {
+            host: "localhost",
+            port: 4455,
+            password: "",
+            enabled: true
+        };
+    }
+}
+
+function saveOBSConfig(config) {
+    fs.writeFileSync(OBS_CONFIG_PATH, JSON.stringify(config, null, 2));
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 900,
@@ -180,6 +199,55 @@ function createWindow() {
         webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false },
     });
     mainWindow.loadFile("index.html");
+    
+    // Create application menu
+    const template = [
+        {
+            label: 'File',
+            submenu: [
+                {
+                    label: 'OBS Settings',
+                    accelerator: 'CmdOrCtrl+,',
+                    click: () => {
+                        mainWindow?.webContents.send("open.obsSettings");
+                    }
+                },
+                { type: 'separator' },
+                {
+                    label: 'Quit',
+                    accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+                    click: () => {
+                        app.quit();
+                    }
+                }
+            ]
+        },
+        {
+            label: 'Tools',
+            submenu: [
+                {
+                    label: 'Cleanup Orphaned Data',
+                    click: () => {
+                        cleanupOrphanedData();
+                    }
+                },
+                {
+                    label: 'Restart Scheduler',
+                    click: () => {
+                        try {
+                            restartScheduler();
+                            mainWindow?.webContents.send("scheduler/log", "🔄 Scheduler restarted manually");
+                        } catch (e) {
+                            mainWindow?.webContents.send("scheduler/log", `❌ Failed to restart scheduler: ${e?.message || e}`);
+                        }
+                    }
+                }
+            ]
+        }
+    ];
+    
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
 }
 
 function getNextOccurrence(daysOfWeek, baseDate) {
@@ -315,6 +383,36 @@ app.whenReady().then(async () => {
     ipcMain.handle("defaults.save", async (_evt, values) => {
         saveDefaults(values || {});
         return { ok: true };
+    });
+
+    // OBS Configuration handlers
+    ipcMain.handle("obs.loadConfig", async () => loadOBSConfig());
+    ipcMain.handle("obs.saveConfig", async (_evt, config) => {
+        saveOBSConfig(config);
+        // Restart scheduler to apply new OBS settings
+        try {
+            restartScheduler();
+            mainWindow?.webContents.send("scheduler/log", "🔄 OBS settings updated - scheduler restarted");
+        } catch (e) {
+            mainWindow?.webContents.send("scheduler/log", `❌ Failed to restart scheduler: ${e?.message || e}`);
+        }
+        return { ok: true };
+    });
+    
+    ipcMain.handle("obs.testConnection", async (_evt, config) => {
+        try {
+            const OBSWebSocket = (await import("obs-websocket-js")).default;
+            const obs = new OBSWebSocket();
+            
+            const url = `ws://${config.host}:${config.port}`;
+            await obs.connect(url, config.password || "");
+            const ver = await obs.call("GetVersion");
+            await obs.disconnect();
+            
+            return { ok: true, version: ver?.obsVersion };
+        } catch (error) {
+            return { ok: false, error: error?.message || String(error) };
+        }
     });
 
     // File picker for thumbnails (returns absolute path)

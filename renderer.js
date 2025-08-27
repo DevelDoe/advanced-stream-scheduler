@@ -440,6 +440,101 @@ window.addEventListener("DOMContentLoaded", () => {
             cleanupBtn.textContent = "Cleanup Orphaned Data";
         }
     });
+
+    // ── OBS Settings ─────────────────────────────────────────────────────
+    const obsSettingsModal = document.getElementById("obsSettingsModal");
+    const obsHost = document.getElementById("obsHost");
+    const obsPort = document.getElementById("obsPort");
+    const obsPassword = document.getElementById("obsPassword");
+    const obsEnabled = document.getElementById("obsEnabled");
+    const obsTestBtn = document.getElementById("obsTestBtn");
+    const obsCancelBtn = document.getElementById("obsCancelBtn");
+    const obsSaveBtn = document.getElementById("obsSaveBtn");
+
+    // Open OBS settings from menu
+    window.electronAPI.onOpenOBSSettings(async () => {
+        try {
+            const config = await window.electronAPI.obsLoadConfig();
+            obsHost.value = config.host || "localhost";
+            obsPort.value = config.port || 4455;
+            obsPassword.value = config.password || "";
+            obsEnabled.checked = config.enabled !== false;
+            obsSettingsModal.style.display = "block";
+        } catch (error) {
+            console.error("Failed to load OBS config:", error);
+            toast("❌ Failed to load OBS settings");
+        }
+    });
+
+    // Test OBS connection
+    obsTestBtn?.addEventListener("click", async () => {
+        try {
+            obsTestBtn.disabled = true;
+            obsTestBtn.textContent = "Testing...";
+            
+            const config = {
+                host: obsHost.value || "localhost",
+                port: parseInt(obsPort.value) || 4455,
+                password: obsPassword.value || "",
+                enabled: obsEnabled.checked
+            };
+            
+            // Test the connection by trying to connect
+            const testResult = await window.electronAPI.obsTestConnection(config);
+            if (testResult.ok) {
+                toast("✅ OBS connection test successful");
+            } else {
+                toast(`❌ OBS connection test failed: ${testResult.error}`);
+            }
+        } catch (error) {
+            console.error("OBS test failed:", error);
+            toast("❌ OBS connection test failed");
+        } finally {
+            obsTestBtn.disabled = false;
+            obsTestBtn.textContent = "Test Connection";
+        }
+    });
+
+    // Save OBS settings
+    obsSaveBtn?.addEventListener("click", async () => {
+        try {
+            obsSaveBtn.disabled = true;
+            obsSaveBtn.textContent = "Saving...";
+            
+            const config = {
+                host: obsHost.value || "localhost",
+                port: parseInt(obsPort.value) || 4455,
+                password: obsPassword.value || "",
+                enabled: obsEnabled.checked
+            };
+            
+            const result = await window.electronAPI.obsSaveConfig(config);
+            if (result.ok) {
+                toast("✅ OBS settings saved");
+                obsSettingsModal.style.display = "none";
+            } else {
+                toast(`❌ Failed to save OBS settings: ${result.error}`);
+            }
+        } catch (error) {
+            console.error("Failed to save OBS config:", error);
+            toast("❌ Failed to save OBS settings");
+        } finally {
+            obsSaveBtn.disabled = false;
+            obsSaveBtn.textContent = "Save";
+        }
+    });
+
+    // Cancel OBS settings
+    obsCancelBtn?.addEventListener("click", () => {
+        obsSettingsModal.style.display = "none";
+    });
+
+    // Close modal when clicking outside
+    obsSettingsModal?.addEventListener("click", (e) => {
+        if (e.target === obsSettingsModal) {
+            obsSettingsModal.style.display = "none";
+        }
+    });
     
     refreshUpcoming();
 });

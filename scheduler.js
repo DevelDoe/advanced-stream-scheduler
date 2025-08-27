@@ -56,7 +56,26 @@ function log(msg) {
 async function probeOBSOnce() {
     const obs = new OBSWebSocket();
     try {
-        await obs.connect("ws://localhost:4455", "");
+        // Get OBS configuration
+        let obsConfig = { host: "localhost", port: 4455, password: "", enabled: true };
+        try {
+            const fs = await import("fs");
+            const path = await import("path");
+            const { app } = await import("electron");
+            const configPath = path.join(app.getPath("userData"), "obs_config.json");
+            const configData = fs.readFileSync(configPath, "utf-8");
+            obsConfig = { ...obsConfig, ...JSON.parse(configData) };
+        } catch (e) {
+            // Use defaults if config file doesn't exist or is invalid
+        }
+        
+        if (!obsConfig.enabled) {
+            schedulerBus.emit("obs_status", { ok: false, error: "OBS WebSocket disabled in settings" });
+            return;
+        }
+        
+        const url = `ws://${obsConfig.host}:${obsConfig.port}`;
+        await obs.connect(url, obsConfig.password || "");
         const ver = await obs.call("GetVersion");
         schedulerBus.emit("obs_status", { ok: true, version: ver?.obsVersion });
         await obs.disconnect();
@@ -89,9 +108,28 @@ async function withOBS(taskName, fn) {
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 10_000;
 
+    // Get OBS configuration
+    let obsConfig = { host: "localhost", port: 4455, password: "", enabled: true };
+    try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const { app } = await import("electron");
+        const configPath = path.join(app.getPath("userData"), "obs_config.json");
+        const configData = fs.readFileSync(configPath, "utf-8");
+        obsConfig = { ...obsConfig, ...JSON.parse(configData) };
+    } catch (e) {
+        // Use defaults if config file doesn't exist or is invalid
+    }
+    
+    if (!obsConfig.enabled) {
+        log(`[${taskName}] ❌ OBS WebSocket disabled in settings`);
+        return;
+    }
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            await obs.connect("ws://localhost:4455", "");
+            const url = `ws://${obsConfig.host}:${obsConfig.port}`;
+            await obs.connect(url, obsConfig.password || "");
             log(`[${taskName}] [Attempt ${attempt}] ✅ Connected to OBS`);
             await fn(obs);
             await obs.disconnect();

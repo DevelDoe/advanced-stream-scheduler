@@ -366,6 +366,43 @@
             <pre id="log"></pre>
         </div>
 
+        <!-- OBS Settings Modal -->
+        <div id="obsSettingsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000;">
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 24px; min-width: 400px;">
+                <h2 style="margin: 0 0 20px 0;">OBS WebSocket Settings</h2>
+                
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 4px;">Host:</label>
+                        <input id="obsHost" type="text" placeholder="localhost" style="width: 100%;" />
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 4px;">Port:</label>
+                        <input id="obsPort" type="number" placeholder="4455" style="width: 100%;" />
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 4px;">Password (optional):</label>
+                        <input id="obsPassword" type="password" placeholder="Leave empty if no password" style="width: 100%;" />
+                    </div>
+                    
+                    <div>
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input id="obsEnabled" type="checkbox" checked />
+                            Enable OBS WebSocket connection
+                        </label>
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;">
+                        <button id="obsTestBtn" style="background: #2a2a2a;">Test Connection</button>
+                        <button id="obsCancelBtn">Cancel</button>
+                        <button id="obsSaveBtn" style="background: var(--accent);">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script src="renderer.js"></script>
     </body>
 </html>

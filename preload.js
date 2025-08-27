@@ -34,4 +34,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     // Cleanup orphaned data
     cleanupOrphanedData: () => ipcRenderer.invoke("cleanup.orphanedData"),
 
+    // OBS Settings
+    onOpenOBSSettings: (cb) => ipcRenderer.on("open.obsSettings", (_e) => cb()),
+    obsLoadConfig: () => ipcRenderer.invoke("obs.loadConfig"),
+    obsSaveConfig: (config) => ipcRenderer.invoke("obs.saveConfig", config),
+    obsTestConnection: (config) => ipcRenderer.invoke("obs.testConnection", config),
+
 });
