@@ -1,6 +1,7 @@
 // main.js
 import { app, BrowserWindow, ipcMain, dialog, Menu } from "electron";
-import { autoUpdater } from "electron-updater";
+import pkg from "electron-updater";
+const { autoUpdater } = pkg;
 import electronLog from "electron-log";
 import { startScheduler, restartScheduler, schedulerBus } from "./scheduler.js";
 import {

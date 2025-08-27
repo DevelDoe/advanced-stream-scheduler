@@ -156,15 +156,6 @@ export function loadAuth(callback) {
 }
 
 function getNewToken(oAuth2Client, callback) {
-    const authUrl = oAuth2Client.generateAuthUrl({
-        access_type: "offline",
-        scope: SCOPES,
-        prompt: "select_account consent",
-    });
-
-    console.log("🔐 Authorize this app in your browser…");
-    open(authUrl);
-
     let handled = false;
     const server = http.createServer(async (req, res) => {
         try {
@@ -195,9 +186,36 @@ function getNewToken(oAuth2Client, callback) {
         }
     });
 
-    server.listen(REDIRECT_PORT, () => {
-        console.log(`🌐 Listening for auth code on http://localhost:${REDIRECT_PORT} …`);
-    });
+    // Try to find an available port starting from REDIRECT_PORT
+    function tryListen(port) {
+        server.listen(port, () => {
+            console.log(`🌐 Listening for auth code on http://localhost:${port} …`);
+            
+            // Create OAuth client with the actual port being used
+            const clientData = JSON.parse(fs.readFileSync(CRED_PATH, "utf-8")).installed || JSON.parse(fs.readFileSync(CRED_PATH, "utf-8")).web;
+            const { client_secret, client_id } = clientData;
+            const dynamicOAuth2Client = new google.auth.OAuth2(client_id, client_secret, `http://localhost:${port}`);
+            
+            const authUrl = dynamicOAuth2Client.generateAuthUrl({
+                access_type: "offline",
+                scope: SCOPES,
+                prompt: "select_account consent",
+            });
+
+            console.log("🔐 Authorize this app in your browser…");
+            open(authUrl);
+        }).on('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                console.log(`⚠️ Port ${port} is in use, trying ${port + 1}...`);
+                tryListen(port + 1);
+            } else {
+                console.error("❌ Server error:", err);
+                if (callback) callback(null, err);
+            }
+        });
+    }
+
+    tryListen(REDIRECT_PORT);
 }
 
 // Helper: ensure we have a reusable liveStream and return its ingest info (RTMP + key)
