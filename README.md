@@ -5,7 +5,7 @@ A desktop application for scheduling and automating YouTube live streams with OB
 ## 🚀 Quick Start (For Users)
 
 ### **📦 Installation**
-1. **Download** the latest release from [GitHub Releases](https://github.com/YOUR_GITHUB_USERNAME/arcane-stream-scheduler/releases)
+1. **Download** the latest release from [GitHub Releases](https://github.com/DevelDoe/arcane-stream-scheduler/releases)
 2. **Install** the `.exe` file (Windows installer)
 3. **Run** the application
 4. **Setup** Google OAuth credentials (see detailed instructions below)
