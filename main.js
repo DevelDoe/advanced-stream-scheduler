@@ -399,6 +399,21 @@ app.whenReady().then(async () => {
         }
 
         if (action.type === "end") {
+            // End the YouTube broadcast first
+            loadAuth(async (auth, error) => {
+                if (error) {
+                    mainWindow?.webContents.send("scheduler/log", `❌ Failed to end YouTube broadcast: ${error?.message || error}`);
+                    return;
+                }
+                try {
+                    await transitionBroadcast(auth, action.broadcastId, "complete");
+                    mainWindow?.webContents.send("scheduler/log", `📡 Transitioned broadcast ${action.broadcastId} → COMPLETE`);
+                } catch (err) {
+                    mainWindow?.webContents.send("scheduler/log", `❌ Failed to end YouTube broadcast: ${err?.message || err}`);
+                }
+            });
+
+            // Handle recurring streams
             const recurringData = loadRecurring();
             const info = recurringData[action.broadcastId];
             if (info?.recurring) {
