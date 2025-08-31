@@ -665,24 +665,33 @@ app.whenReady().then(async () => {
     }, 6 * 60 * 60 * 1000);
 });
 
-// List upcoming
-ipcMain.handle(
-    "yt.listUpcoming",
-    async () =>
-        new Promise((resolve, reject) => {
-            loadAuth(async (auth, error) => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
-                try {
-                    resolve(await listUpcomingBroadcasts(auth));
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        })
-);
+    // List upcoming
+    ipcMain.handle(
+        "yt.listUpcoming",
+        async () =>
+            new Promise((resolve, reject) => {
+                loadAuth(async (auth, error) => {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
+                    try {
+                        const broadcasts = await listUpcomingBroadcasts(auth);
+                        const recurringData = loadRecurring();
+                        
+                        // Add recurring information to each broadcast
+                        const broadcastsWithRecurring = broadcasts.map(broadcast => ({
+                            ...broadcast,
+                            recurring: recurringData[broadcast.id] || null
+                        }));
+                        
+                        resolve(broadcastsWithRecurring);
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            })
+    );
 
 // Delete one
 ipcMain.handle(
@@ -874,6 +883,50 @@ ipcMain.handle("yt.goLive", async (_evt, broadcastId) => {
             try {
                 const res = await goLiveWithRetry(auth, broadcastId);
                 resolve(res);
+            } catch (e) {
+                reject(e);
+            }
+        });
+    });
+});
+
+// IPC from renderer: request to end stream
+ipcMain.handle("yt.endStream", async (_evt, broadcastId) => {
+    return new Promise((resolve, reject) => {
+        loadAuth(async (auth, error) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+            try {
+                // First, end the YouTube broadcast
+                const res = await transitionBroadcast(auth, broadcastId, "complete");
+                mainWindow?.webContents.send("scheduler/log", `📡 Transitioned broadcast ${broadcastId} → COMPLETE`);
+                
+                // Then stop the OBS stream
+                try {
+                    const OBSWebSocket = (await import("obs-websocket-js")).default;
+                    const obs = new OBSWebSocket();
+                    const config = loadOBSConfig();
+                    
+                    if (config.enabled) {
+                        const url = `ws://${config.host}:${config.port}`;
+                        await obs.connect(url, config.password || "");
+                        await obs.call("StopStream");
+                        await obs.disconnect();
+                        mainWindow?.webContents.send("scheduler/log", `🛑 OBS stream stopped`);
+                    }
+                } catch (obsError) {
+                    mainWindow?.webContents.send("scheduler/log", `⚠️ Failed to stop OBS stream: ${obsError?.message || obsError}`);
+                    // Don't fail the entire operation if OBS fails
+                }
+                
+                // Only return serializable data to avoid IPC cloning errors
+                resolve({ 
+                    ok: true, 
+                    broadcastId,
+                    message: "Stream ended successfully"
+                });
             } catch (e) {
                 reject(e);
             }

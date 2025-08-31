@@ -38,6 +38,9 @@ function rowTemplate(item) {
         statusColor = "#888888";
     }
     
+    // Check if this broadcast has recurring settings
+    const recurringInfo = item.recurring ? getRecurringInfo(item.recurring) : null;
+    
     return `
     <li data-id="${item.id}" style="display:flex;flex-direction:column;gap:8px;margin:6px 0;padding:8px;border-radius:1px;background:rgba(255,255,255,0.05);">
       <div style="display:flex;gap:8px;align-items:center;">
@@ -47,8 +50,10 @@ function rowTemplate(item) {
           <div style="display:flex;gap:8px;align-items:center;">
             <code style="opacity:.6">${item.id}</code>
             ${statusText ? `<span style="color:${statusColor};font-weight:600;">${statusText}</span>` : ""}
+            ${recurringInfo ? `<span style="color:#4ade80;font-weight:600;">🔄 ${recurringInfo}</span>` : ""}
           </div>
         </div>
+        ${(item.status === "liveStreaming" || item.status === "active") ? '<button class="endStreamBtn btn-end-stream">🔴 End Stream</button>' : ''}
         <button class="deleteBroadcastBtn">Delete</button>
         <button class="clearActionsBtn">Clear actions</button>
         <button class="addActionBtn">Add Action</button>
@@ -64,6 +69,28 @@ function rowTemplate(item) {
       </div>
       <ul class="existingActions" style="list-style:none;margin:0;padding:0;"></ul>
     </li>`;
+}
+
+// Helper function to format recurring information
+function getRecurringInfo(recurringData) {
+    if (!recurringData || !recurringData.recurring) {
+        return null;
+    }
+    
+    if (!recurringData.days || !Array.isArray(recurringData.days)) {
+        return "Recurring";
+    }
+    
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const selectedDays = recurringData.days.map(day => dayNames[day]).join(", ");
+    
+    if (recurringData.days.length === 7) {
+        return "Daily";
+    } else if (recurringData.days.length === 1) {
+        return `Weekly (${selectedDays})`;
+    } else {
+        return `Weekly (${selectedDays})`;
+    }
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -108,8 +135,42 @@ window.addEventListener("DOMContentLoaded", () => {
     let lastHB = 0;
     let chosenThumbPath = null;
     let lastThumbPath = null;
+    
+    // Component status tracking
+    let componentStatus = {
+        scheduler: false,
+        youtube: false,
+        obs: false
+    };
 
     const baseName = (p) => (p ? p.split(/[\\/]/).pop() : "");
+
+    // Function to check if all components are ready and update button state
+    function updateScheduleButtonState() {
+        const allReady = componentStatus.scheduler && componentStatus.youtube && componentStatus.obs;
+        
+        if (button) {
+            if (allReady) {
+                button.disabled = false;
+                button.textContent = "Schedule Stream";
+                button.style.background = "";
+                button.style.cursor = "";
+                button.title = "Schedule a new stream";
+            } else {
+                button.disabled = true;
+                button.textContent = "System Not Ready";
+                button.style.background = "#2a2a2a";
+                button.style.cursor = "not-allowed";
+                
+                const missingComponents = [];
+                if (!componentStatus.scheduler) missingComponents.push("Scheduler");
+                if (!componentStatus.youtube) missingComponents.push("YouTube");
+                if (!componentStatus.obs) missingComponents.push("OBS");
+                
+                button.title = `Waiting for: ${missingComponents.join(", ")}`;
+            }
+        }
+    }
 
     // ── defaults ───────────────────────────────────────────────────────────
     (async () => {
@@ -145,6 +206,17 @@ window.addEventListener("DOMContentLoaded", () => {
 
     // ── schedule ───────────────────────────────────────────────────────────
     button?.addEventListener("click", async () => {
+        // Check if all components are ready before allowing scheduling
+        if (!componentStatus.scheduler || !componentStatus.youtube || !componentStatus.obs) {
+            const missingComponents = [];
+            if (!componentStatus.scheduler) missingComponents.push("Scheduler");
+            if (!componentStatus.youtube) missingComponents.push("YouTube");
+            if (!componentStatus.obs) missingComponents.push("OBS");
+            
+            toast(`❌ System not ready. Waiting for: ${missingComponents.join(", ")}`);
+            return;
+        }
+        
         const title = titleEl.value;
         const localTime = startTimeEl.value;
         if (!localTime) return toast("Pick a start time.");
@@ -159,6 +231,16 @@ window.addEventListener("DOMContentLoaded", () => {
         const recurring = document.getElementById("recurringChk").checked;
         const days = [...document.querySelectorAll("#recurringDays input:checked")].map((cb) => Number(cb.value));
 
+        // Disable button and show loading state
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.innerHTML = '<span class="loading-spinner"></span>Scheduling...';
+        button.style.background = "#2a2a2a";
+        button.style.cursor = "not-allowed";
+
+        // Show initial feedback
+        toast("📅 Scheduling stream...");
+
         try {
             await window.electronAPI.scheduleStream(title, isoUTC, {
                 description,
@@ -172,6 +254,9 @@ window.addEventListener("DOMContentLoaded", () => {
             setBadge(ytEl, false, "YouTube API: Error");
             toast("❌ Schedule error (check logs)");
             console.error(e);
+        } finally {
+            // Update button state based on component status
+            updateScheduleButtonState();
         }
     });
 
@@ -179,17 +264,38 @@ window.addEventListener("DOMContentLoaded", () => {
     window.electronAPI.onLoading(({ component, status }) => {
         if (status === "loading") {
             setBadge(getBadgeForComponent(component), "loading", `${getBadgeTextForComponent(component)}: Loading...`);
+            // Mark component as not ready during loading
+            if (component === "scheduler" || component === "youtube" || component === "obs") {
+                componentStatus[component] = false;
+            }
         } else if (status === "ready") {
             // Component is ready - set appropriate status
             if (component === "youtube") {
                 setBadge(ytEl, true, "YouTube API: OK");
+                componentStatus.youtube = true;
+            } else if (component === "scheduler") {
+                setBadge(schedEl, true, "OBS Automation: OK");
+                componentStatus.scheduler = true;
+            } else if (component === "obs") {
+                setBadge(obsEl, true, "OBS Connection: OK");
+                componentStatus.obs = true;
             }
         } else if (status === "error") {
             // Component failed - set error status
             if (component === "youtube") {
                 setBadge(ytEl, false, "YouTube API: Error");
+                componentStatus.youtube = false;
+            } else if (component === "scheduler") {
+                setBadge(schedEl, false, "OBS Automation: Error");
+                componentStatus.scheduler = false;
+            } else if (component === "obs") {
+                setBadge(obsEl, false, "OBS Connection: Error");
+                componentStatus.obs = false;
             }
         }
+        
+        // Update button state whenever component status changes
+        updateScheduleButtonState();
     });
 
     function getBadgeForComponent(component) {
@@ -242,6 +348,9 @@ window.addEventListener("DOMContentLoaded", () => {
         lastHB = at;
         if (hbEl) hbEl.textContent = "HB: " + new Date(at).toLocaleTimeString();
         setBadge(schedEl, true, "OBS Automation: OK");
+        // Mark scheduler as ready when we get heartbeat
+        componentStatus.scheduler = true;
+        updateScheduleButtonState();
     });
 
     setInterval(() => {
@@ -249,13 +358,24 @@ window.addEventListener("DOMContentLoaded", () => {
         const stale = Date.now() - lastHB > 65_000;
         if (stale) {
             setBadge(schedEl, false, "OBS Automation: DOWN");
+            // Mark scheduler as not ready when heartbeat is stale
+            componentStatus.scheduler = false;
+            updateScheduleButtonState();
             toast("⚠️ OBS Automation heartbeat stale");
         }
     }, 10_000);
 
     window.electronAPI.onObs((st) => {
-        if (st?.ok) setBadge(obsEl, true, `OBS: OK${st.version ? " " + st.version : ""}`);
-        else setBadge(obsEl, false, "OBS: DOWN");
+        if (st?.ok) {
+            setBadge(obsEl, true, `OBS: OK${st.version ? " " + st.version : ""}`);
+            // Mark OBS as ready when we get status
+            componentStatus.obs = true;
+        } else {
+            setBadge(obsEl, false, "OBS: DOWN");
+            // Mark OBS as not ready when status is bad
+            componentStatus.obs = false;
+        }
+        updateScheduleButtonState();
     });
 
     // ── log panel toggle ────────────────────────────────────────────────────
@@ -405,6 +525,13 @@ window.addEventListener("DOMContentLoaded", () => {
             const atISO = new Date(atLocal).toISOString();
             const sceneName = row.querySelector(".sceneInput").value.trim();
             const payload = type === "setScene" ? { sceneName: sceneName || "live" } : {};
+            
+            // Add loading state to save button
+            const saveBtn = e.target;
+            const originalText = saveBtn.textContent;
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="loading-spinner"></span>Saving...';
+            
             try {
                 const a = await window.electronAPI.actionsAdd(broadcastId, atISO, type, payload);
                 toast("➕ Action added.");
@@ -418,6 +545,10 @@ window.addEventListener("DOMContentLoaded", () => {
             } catch (err) {
                 console.error(err);
                 toast("❌ Failed to add action");
+            } finally {
+                // Restore button state
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalText;
             }
             return;
         }
@@ -425,6 +556,14 @@ window.addEventListener("DOMContentLoaded", () => {
         if (e.target.classList.contains("delActionBtn")) {
             const aid = e.target.closest("li[data-aid]")?.dataset?.aid;
             if (!aid) return;
+            
+            // Add loading state to delete action button
+            const delBtn = e.target;
+            const originalText = delBtn.textContent;
+            delBtn.disabled = true;
+            delBtn.textContent = "⋯";
+            delBtn.style.opacity = "0.6";
+            
             try {
                 await window.electronAPI.actionsDelete(aid);
                 e.target.closest("li[data-aid]").remove();
@@ -432,12 +571,24 @@ window.addEventListener("DOMContentLoaded", () => {
             } catch (err) {
                 console.error(err);
                 toast("❌ Failed to remove action");
+            } finally {
+                // Restore button state
+                delBtn.disabled = false;
+                delBtn.textContent = originalText;
+                delBtn.style.opacity = "";
             }
             return;
         }
 
         if (e.target.classList.contains("deleteBroadcastBtn")) {
             if (!confirm("Delete this YouTube broadcast AND remove its scheduled actions?")) return;
+            
+            // Add loading state to delete button
+            const deleteBtn = e.target;
+            const originalText = deleteBtn.textContent;
+            deleteBtn.disabled = true;
+            deleteBtn.innerHTML = '<span class="loading-spinner"></span>Deleting...';
+            
             try {
                 await window.electronAPI.deleteBroadcast(broadcastId);
                 row.remove();
@@ -446,11 +597,45 @@ window.addEventListener("DOMContentLoaded", () => {
             } catch (err) {
                 console.error(err);
                 toast("❌ Failed to delete broadcast");
+            } finally {
+                // Restore button state
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = originalText;
+            }
+            return;
+        }
+
+        if (e.target.classList.contains("endStreamBtn")) {
+            if (!confirm("Are you sure you want to end this live stream? This will stop the broadcast immediately.")) return;
+            
+            // Add loading state to end stream button
+            const endBtn = e.target;
+            const originalText = endBtn.textContent;
+            endBtn.disabled = true;
+            endBtn.innerHTML = '<span class="loading-spinner"></span>Ending...';
+            
+            try {
+                await window.electronAPI.endStream(broadcastId); // This will transition to "complete" state
+                toast("🔴 Stream ended successfully");
+                await refreshUpcoming(true); // Refresh to update the status
+            } catch (err) {
+                console.error(err);
+                toast("❌ Failed to end stream");
+            } finally {
+                // Restore button state
+                endBtn.disabled = false;
+                endBtn.textContent = originalText;
             }
             return;
         }
 
         if (e.target.classList.contains("clearActionsBtn")) {
+            // Add loading state to clear actions button
+            const clearBtn = e.target;
+            const originalText = clearBtn.textContent;
+            clearBtn.disabled = true;
+            clearBtn.innerHTML = '<span class="loading-spinner"></span>Clearing...';
+            
             try {
                 const acts = await window.electronAPI.actionsList(broadcastId);
                 for (const a of acts) await window.electronAPI.actionsDelete(a.id);
@@ -460,6 +645,10 @@ window.addEventListener("DOMContentLoaded", () => {
             } catch (err) {
                 console.error(err);
                 toast("❌ Failed to clear actions");
+            } finally {
+                // Restore button state
+                clearBtn.disabled = false;
+                clearBtn.textContent = originalText;
             }
             return;
         }
@@ -581,8 +770,9 @@ window.addEventListener("DOMContentLoaded", () => {
     // Test credentials connection
     credentialsTestBtn?.addEventListener("click", async () => {
         try {
+            const originalText = credentialsTestBtn.textContent;
             credentialsTestBtn.disabled = true;
-            credentialsTestBtn.textContent = "Testing...";
+            credentialsTestBtn.innerHTML = '<span class="loading-spinner"></span>Testing...';
             
             // Try to load upcoming broadcasts to test the connection
             const items = await window.electronAPI.listUpcoming();
@@ -647,8 +837,9 @@ window.addEventListener("DOMContentLoaded", () => {
     // Test OBS connection
     obsTestBtn?.addEventListener("click", async () => {
         try {
+            const originalText = obsTestBtn.textContent;
             obsTestBtn.disabled = true;
-            obsTestBtn.textContent = "Testing...";
+            obsTestBtn.innerHTML = '<span class="loading-spinner"></span>Testing...';
             
             const config = {
                 host: obsHost.value || "localhost",
@@ -676,8 +867,9 @@ window.addEventListener("DOMContentLoaded", () => {
     // Save OBS settings
     obsSaveBtn?.addEventListener("click", async () => {
         try {
+            const originalText = obsSaveBtn.textContent;
             obsSaveBtn.disabled = true;
-            obsSaveBtn.textContent = "Saving...";
+            obsSaveBtn.innerHTML = '<span class="loading-spinner"></span>Saving...';
             
             const config = {
                 host: obsHost.value || "localhost",
@@ -713,6 +905,9 @@ window.addEventListener("DOMContentLoaded", () => {
             obsSettingsModal.style.display = "none";
         }
     });
+    
+    // Initialize button state
+    updateScheduleButtonState();
     
     refreshUpcoming();
 });

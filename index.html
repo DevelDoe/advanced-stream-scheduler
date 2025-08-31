@@ -130,12 +130,48 @@
             button:active {
                 transform: translateY(1px);
             }
+            button:disabled {
+                opacity: 0.6;
+                cursor: not-allowed !important;
+                background: #2a2a2a !important;
+            }
+            button:disabled:hover {
+                background: #2a2a2a !important;
+            }
+            
+            /* Loading spinner animation for buttons */
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            
+            .loading-spinner {
+                display: inline-block;
+                width: 12px;
+                height: 12px;
+                border: 2px solid transparent;
+                border-top: 2px solid currentColor;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin-right: 6px;
+            }
+            
             .btn-danger {
                 background: #2a1a1a;
                 border-color: #3a2323;
             }
             .btn-danger:hover {
                 background: #3a2323;
+            }
+            
+            .btn-end-stream {
+                background: #8e1e1e !important;
+                border-color: #3a2323 !important;
+                color: #fff !important;
+            }
+            .btn-end-stream:hover {
+                background: #a52a2a !important;
+                border-color: #4a2a2a !important;
             }
             input,
             select,

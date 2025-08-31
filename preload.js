@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
     // go live
     goLive: (broadcastId) => ipcRenderer.invoke("yt.goLive", broadcastId),
+    endStream: (broadcastId) => ipcRenderer.invoke("yt.endStream", broadcastId),
     onBroadcast: (cb) => ipcRenderer.on("broadcast/status", (_e, st) => cb(st)),
 
     onTimezone: (cb) => ipcRenderer.on("scheduler/timezone", (_e, p) => cb(p)),
