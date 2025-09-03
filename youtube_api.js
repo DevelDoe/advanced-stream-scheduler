@@ -13,6 +13,50 @@ const REDIRECT_PORT = 4567;
 const TOKEN_PATH = path.join(app.getPath("userData"), "token.json");
 const CRED_PATH = path.join(app.getPath("userData"), "credentials.json");
 
+// Global state to prevent multiple OAuth flows
+let oauthInProgress = false;
+let oauthServer = null;
+let oauthCallbacks = [];
+
+// Cleanup function to reset OAuth state
+function cleanupOAuthState() {
+    oauthInProgress = false;
+    if (oauthServer) {
+        try {
+            oauthServer.close();
+        } catch (e) {
+            // Ignore errors when closing server
+        }
+        oauthServer = null;
+    }
+    if (oauthTimeoutRef) {
+        clearTimeout(oauthTimeoutRef);
+        oauthTimeoutRef = null;
+    }
+    oauthCallbacks = [];
+}
+
+// Global timeout reference
+let oauthTimeoutRef = null;
+
+// Export function to check OAuth status
+export function isOAuthInProgress() {
+    return oauthInProgress;
+}
+
+// Export function to cancel ongoing OAuth flow
+export function cancelOAuth() {
+    if (oauthInProgress) {
+        console.log("🚫 Cancelling OAuth flow...");
+        oauthCallbacks.forEach(cb => {
+            if (cb) cb(null, new Error("OAuth authentication was cancelled."));
+        });
+        cleanupOAuthState();
+        return true;
+    }
+    return false;
+}
+
 // Validate credentials file format
 export function validateCredentials(credentialsPath = CRED_PATH) {
     try {
@@ -156,6 +200,28 @@ export function loadAuth(callback) {
 }
 
 function getNewToken(oAuth2Client, callback) {
+    // If OAuth is already in progress, queue this callback and return
+    if (oauthInProgress) {
+        console.log("🔄 OAuth already in progress, queuing callback...");
+        oauthCallbacks.push(callback);
+        return;
+    }
+
+    // Mark OAuth as in progress
+    oauthInProgress = true;
+    oauthCallbacks.push(callback);
+
+    // Set a timeout to prevent OAuth from hanging indefinitely
+    oauthTimeoutRef = setTimeout(() => {
+        if (oauthInProgress) {
+            console.log("⏰ OAuth timeout - cleaning up...");
+            cleanupOAuthState();
+            oauthCallbacks.forEach(cb => {
+                if (cb) cb(null, new Error("OAuth authentication timed out. Please try again."));
+            });
+        }
+    }, 300000); // 5 minutes timeout
+
     let handled = false;
     const server = http.createServer(async (req, res) => {
         try {
@@ -175,16 +241,30 @@ function getNewToken(oAuth2Client, callback) {
             oAuth2Client.setCredentials(tokens);
             fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
             res.end("✅ Authorization successful! You may close this tab.");
-            server.close();
-            if (callback) callback(oAuth2Client);
+            
+            // Call all queued callbacks
+            oauthCallbacks.forEach(cb => {
+                if (cb) cb(oAuth2Client);
+            });
+            
+            // Clean up OAuth state
+            cleanupOAuthState();
+            
         } catch (err) {
             console.error("❌ OAuth error:", err?.response?.data || err);
             try {
                 res.end("❌ OAuth error. Check console.");
             } catch {}
+            
             server.close();
+            
+            // Clean up OAuth state on error
+            cleanupOAuthState();
         }
     });
+
+    // Store server reference
+    oauthServer = server;
 
     // Try to find an available port starting from REDIRECT_PORT
     function tryListen(port) {
@@ -210,7 +290,13 @@ function getNewToken(oAuth2Client, callback) {
                 tryListen(port + 1);
             } else {
                 console.error("❌ Server error:", err);
-                if (callback) callback(null, err);
+                
+                oauthCallbacks.forEach(cb => {
+                    if (cb) cb(null, err);
+                });
+                
+                // Clean up OAuth state on error
+                cleanupOAuthState();
             }
         });
     }

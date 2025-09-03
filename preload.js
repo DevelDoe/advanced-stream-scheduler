@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     credentialsCopyToApp: (sourcePath) => ipcRenderer.invoke("credentials.copyToApp", sourcePath),
     credentialsClearToken: () => ipcRenderer.invoke("credentials.clearToken"),
 
+    // OAuth Status and Control
+    oauthStatus: () => ipcRenderer.invoke("oauth.status"),
+    oauthCancel: () => ipcRenderer.invoke("oauth.cancel"),
+
     // Update functions
     updateCheck: () => ipcRenderer.invoke("update.check"),
     updateDownload: () => ipcRenderer.invoke("update.download"),

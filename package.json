@@ -9,6 +9,9 @@
     "license": "ISC",
     "scripts": {
         "start": "electron .",
+        "test": "mocha",
+        "test:watch": "mocha --watch",
+        "test:coverage": "nyc mocha",
         "dist": "electron-builder",
         "clean": "rimraf dist",
         "pack:win": "cross-env NODE_ENV=production DEBUG=false DATA=false BOUNCE=true forceUpdate=false electron-packager . \"Advanced Stream Scheduler\" --platform=win32 --arch=x64 --out=dist --overwrite --asar --prune=true --icon=build/icon.ico --ignore=\"^/(dist|coverage|\\.github|.*\\.map$)/\"",
@@ -29,11 +32,18 @@
         "open": "^10.2.0"
     },
     "devDependencies": {
+        "@babel/core": "^7.28.3",
+        "@babel/preset-env": "^7.28.3",
+        "@babel/register": "^7.28.3",
+        "chai": "^6.0.1",
         "cross-env": "^7.0.3",
         "electron": "^37.3.1",
         "electron-builder": "^26.0.12",
         "electron-packager": "^17.1.2",
-        "rimraf": "^5.0.5"
+        "mocha": "^11.7.2",
+        "rimraf": "^5.0.5",
+        "sinon": "^21.0.0",
+        "sinon-chai": "^4.0.1"
     },
     "build": {
         "appId": "com.advanced.stream-scheduler",

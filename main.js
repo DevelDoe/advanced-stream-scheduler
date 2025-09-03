@@ -15,6 +15,8 @@ import {
     listActiveBroadcasts,
     checkCredentialsSetup,
     validateCredentials,
+    isOAuthInProgress,
+    cancelOAuth,
 } from "./youtube_api.js";
 import os from "os";
 import fs from "fs";
@@ -281,12 +283,27 @@ function createWindow() {
     Menu.setApplicationMenu(applicationMenu);
 }
 
+/**
+ * Calculate the next occurrence of a stream based on selected days of the week.
+ * This function finds the next day that matches one of the selected daysOfWeek,
+ * starting from the day after the baseDate.
+ * 
+ * @param {number[]} daysOfWeek - Array of day numbers (0=Sunday, 1=Monday, etc.)
+ * @param {Date} baseDate - The reference date to calculate from (usually when the last stream started)
+ * @returns {Date} The next occurrence date
+ */
 function getNextOccurrence(daysOfWeek, baseDate) {
     let d = new Date(baseDate);
     d.setDate(d.getDate() + 1); // start with tomorrow
     while (!daysOfWeek.includes(d.getDay())) {
         d.setDate(d.getDate() + 1);
     }
+    
+    // Log the calculation for debugging
+    const baseTimeStr = baseDate.toISOString();
+    const nextTimeStr = d.toISOString();
+    console.log(`[getNextOccurrence] Base: ${baseTimeStr}, Next: ${nextTimeStr}, Days: [${daysOfWeek.join(',')}]`);
+    
     return d;
 }
 
@@ -383,6 +400,12 @@ app.whenReady().then(async () => {
         if (action.type === "start") {
             // slight buffer so OBS is actually sending data
             setTimeout(() => {
+                // Skip if OAuth is already in progress
+                if (isOAuthInProgress()) {
+                    mainWindow?.webContents.send("scheduler/log", "⏳ OAuth in progress, skipping start action...");
+                    return;
+                }
+                
                 loadAuth(async (auth, error) => {
                     if (error) {
                         mainWindow?.webContents.send("scheduler/log", `❌ Go-live after start failed: ${error?.message || error}`);
@@ -400,6 +423,11 @@ app.whenReady().then(async () => {
 
         if (action.type === "end") {
             // End the YouTube broadcast first
+            if (isOAuthInProgress()) {
+                mainWindow?.webContents.send("scheduler/log", "⏳ OAuth in progress, skipping end action...");
+                return;
+            }
+            
             loadAuth(async (auth, error) => {
                 if (error) {
                     mainWindow?.webContents.send("scheduler/log", `❌ Failed to end YouTube broadcast: ${error?.message || error}`);
@@ -417,13 +445,32 @@ app.whenReady().then(async () => {
             const recurringData = loadRecurring();
             const info = recurringData[action.broadcastId];
             if (info?.recurring) {
+                if (isOAuthInProgress()) {
+                    mainWindow?.webContents.send("scheduler/log", "⏳ OAuth in progress, skipping recurring setup...");
+                    return;
+                }
+                
                 loadAuth(async (auth, error) => {
                     if (error) {
                         mainWindow?.webContents.send("scheduler/log", `❌ Failed to schedule recurring: ${error?.message || error}`);
                         return;
                     }
-                    const nextDate = getNextOccurrence(info.days, new Date());
+                    // Use the stream's START time (when it was scheduled to begin) instead of when it ended
+                    // This ensures proper scheduling based on the intended stream schedule, not when actions execute
+                    const streamStartTime = new Date(info.baseTime);
+                    const currentTime = new Date();
+                    mainWindow?.webContents.send("scheduler/log", `🔁 Recurring: Stream started at ${streamStartTime.toISOString()}, Current time: ${currentTime.toISOString()}`);
+                    
+                    // Validate that the stream start time is reasonable (not too far in the past)
+                    const timeDiffHours = (currentTime.getTime() - streamStartTime.getTime()) / (1000 * 60 * 60);
+                    if (timeDiffHours > 168) { // 7 days
+                        mainWindow?.webContents.send("scheduler/log", `⚠️ Warning: Stream start time is ${Math.round(timeDiffHours)} hours old. This might indicate a timing issue.`);
+                    }
+                    
+                    const nextDate = getNextOccurrence(info.days, streamStartTime);
                     const isoNext = nextDate.toISOString();
+                    
+                    mainWindow?.webContents.send("scheduler/log", `🔁 Recurring: Next stream scheduled for ${nextDate.toISOString()}`);
 
                     const { title, description, privacy, latency, thumbPath } = info.meta || {};
                     try {
@@ -563,8 +610,27 @@ app.whenReady().then(async () => {
         }
     });
 
+    // OAuth status and control handlers
+    ipcMain.handle("oauth.status", async () => {
+        return { inProgress: isOAuthInProgress() };
+    });
+
+    ipcMain.handle("oauth.cancel", async () => {
+        try {
+            const cancelled = cancelOAuth();
+            return { ok: true, cancelled };
+        } catch (error) {
+            return { ok: false, error: error.message };
+        }
+    });
+
     // Poll YouTube for currently-live broadcasts every 30s
     setInterval(() => {
+        // Skip if OAuth is already in progress to prevent spam
+        if (isOAuthInProgress()) {
+            return;
+        }
+        
         loadAuth(async (auth, error) => {
             if (error) {
                 // Mark YouTube API as failed
@@ -670,6 +736,11 @@ app.whenReady().then(async () => {
         "yt.listUpcoming",
         async () =>
             new Promise((resolve, reject) => {
+                if (isOAuthInProgress()) {
+                    reject(new Error("OAuth authentication in progress. Please wait for it to complete."));
+                    return;
+                }
+                
                 loadAuth(async (auth, error) => {
                     if (error) {
                         reject(error);
@@ -698,6 +769,11 @@ ipcMain.handle(
     "yt.deleteBroadcast",
     async (_evt, id) =>
         new Promise((resolve, reject) => {
+            if (isOAuthInProgress()) {
+                reject(new Error("OAuth authentication in progress. Please wait for it to complete."));
+                return;
+            }
+            
             loadAuth(async (auth, error) => {
                 if (error) {
                     reject(error);
@@ -748,6 +824,11 @@ ipcMain.handle(
 ipcMain.handle("scheduleStream", async (_evt, payload) => {
     // payload: { title, isoUTC, description, privacy, latency, thumbPath }
     return new Promise((resolve, reject) => {
+        if (isOAuthInProgress()) {
+            reject(new Error("OAuth authentication in progress. Please wait for it to complete."));
+            return;
+        }
+        
         loadAuth(async (auth, error) => {
             if (error) {
                 reject(error);

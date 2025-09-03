@@ -701,13 +701,21 @@ window.addEventListener("DOMContentLoaded", () => {
     const credentialsClearBtn = document.getElementById("credentialsClearBtn");
     const credentialsTestBtn = document.getElementById("credentialsTestBtn");
     const credentialsCancelBtn = document.getElementById("credentialsCancelBtn");
+    
+    // OAuth status elements
+    const oauthStatus = document.getElementById("oauthStatus");
+    const oauthCancelBtn = document.getElementById("oauthCancelBtn");
 
     let selectedCredentialsPath = null;
 
     // Open credentials setup from menu
     window.electronAPI.onOpenCredentialsSetup(async () => {
         await updateCredentialsStatus();
+        await updateOAuthStatus();
         credentialsModal.style.display = "block";
+        
+        // Start polling for OAuth status changes
+        startOAuthStatusPolling();
     });
 
     async function updateCredentialsStatus() {
@@ -730,9 +738,52 @@ window.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    async function updateOAuthStatus() {
+        try {
+            const oauthInfo = await window.electronAPI.oauthStatus();
+            
+            if (oauthInfo.inProgress) {
+                oauthStatus.style.display = "block";
+            } else {
+                oauthStatus.style.display = "none";
+            }
+        } catch (error) {
+            console.error("Failed to check OAuth status:", error);
+            oauthStatus.style.display = "none";
+        }
+    }
+
+    let oauthStatusInterval = null;
+
+    function startOAuthStatusPolling() {
+        // Clear any existing interval
+        if (oauthStatusInterval) {
+            clearInterval(oauthStatusInterval);
+        }
+        
+        // Poll every 2 seconds while modal is open
+        oauthStatusInterval = setInterval(async () => {
+            await updateOAuthStatus();
+        }, 2000);
+    }
+
+    function stopOAuthStatusPolling() {
+        if (oauthStatusInterval) {
+            clearInterval(oauthStatusInterval);
+            oauthStatusInterval = null;
+        }
+    }
+
     // Pick credentials file
     credentialsPickBtn?.addEventListener("click", async () => {
         try {
+            // Check if OAuth is in progress
+            const oauthInfo = await window.electronAPI.oauthStatus();
+            if (oauthInfo.inProgress) {
+                toast("⏳ Please wait for OAuth authentication to complete before changing credentials");
+                return;
+            }
+            
             const result = await window.electronAPI.credentialsPick();
             if (result.path) {
                 selectedCredentialsPath = result.path;
@@ -770,6 +821,13 @@ window.addEventListener("DOMContentLoaded", () => {
     // Test credentials connection
     credentialsTestBtn?.addEventListener("click", async () => {
         try {
+            // Check if OAuth is in progress
+            const oauthInfo = await window.electronAPI.oauthStatus();
+            if (oauthInfo.inProgress) {
+                toast("⏳ Please wait for OAuth authentication to complete before testing");
+                return;
+            }
+            
             const originalText = credentialsTestBtn.textContent;
             credentialsTestBtn.disabled = true;
             credentialsTestBtn.innerHTML = '<span class="loading-spinner"></span>Testing...';
@@ -789,6 +847,13 @@ window.addEventListener("DOMContentLoaded", () => {
 
     // Clear stored token
     credentialsClearBtn?.addEventListener("click", async () => {
+        // Check if OAuth is in progress
+        const oauthStatus = await window.electronAPI.oauthStatus();
+        if (oauthStatus.inProgress) {
+            toast("⚠️ Cannot clear token while OAuth authentication is in progress");
+            return;
+        }
+        
         if (!confirm("This will clear your stored authentication token. You'll need to re-authenticate with Google. Continue?")) {
             return;
         }
@@ -807,15 +872,39 @@ window.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // OAuth cancel button
+    oauthCancelBtn?.addEventListener("click", async () => {
+        try {
+            oauthCancelBtn.disabled = true;
+            oauthCancelBtn.textContent = "Cancelling...";
+            
+            const result = await window.electronAPI.oauthCancel();
+            if (result.ok && result.cancelled) {
+                toast("✅ OAuth authentication cancelled");
+                await updateOAuthStatus();
+            } else {
+                toast("ℹ️ No OAuth flow to cancel");
+            }
+        } catch (error) {
+            console.error("Failed to cancel OAuth:", error);
+            toast(`❌ Failed to cancel OAuth: ${error.message}`);
+        } finally {
+            oauthCancelBtn.disabled = false;
+            oauthCancelBtn.textContent = "Cancel OAuth";
+        }
+    });
+
     // Close credentials modal
     credentialsCancelBtn?.addEventListener("click", () => {
         credentialsModal.style.display = "none";
+        stopOAuthStatusPolling();
     });
 
     // Close modal when clicking outside
     credentialsModal?.addEventListener("click", (e) => {
         if (e.target === credentialsModal) {
             credentialsModal.style.display = "none";
+            stopOAuthStatusPolling();
         }
     });
 
