@@ -219,6 +219,8 @@ function main() {
         log('  node tests/run-tests.js oauth        # Run OAuth-related tests');
         log('  node tests/run-tests.js scheduler    # Run scheduler tests');
         log('  node tests/run-tests.js obs          # Run OBS integration tests');
+        log('  node tests/run-tests.js action       # Run action management tests');
+        log('  node tests/run-tests.js integration  # Run integration tests');
         log('  node tests/run-tests.js --help       # Show this help');
     } else {
         // Run specific category

@@ -20,8 +20,10 @@ tests/
 │   ├── main-process-oauth.test.js
 │   ├── renderer-oauth.test.js
 │   ├── scheduler.test.js
-│   └── obs-integration.test.js
-├── integration/      # Integration tests (future)
+│   ├── obs-integration.test.js
+│   └── action-management.test.js
+├── integration/      # Integration tests
+│   └── action-cleanup-integration.test.js
 ├── run-tests.js      # Custom test runner
 └── README.md         # This file
 ```
@@ -100,6 +102,23 @@ npm run test:watch
 - Event handling
 - Error recovery and resilience
 - Performance monitoring
+
+### 4. Action Management Tests
+**File**: `tests/unit/action-management.test.js`
+- Action cleanup and orphaned data management
+- Live stream action preservation during boot
+- Recurring stream action timing structure preservation
+- Day structure maintenance across recurring streams
+- Error handling in cleanup processes
+- Integration between cleanup and recurring stream creation
+
+### 5. Integration Tests
+**File**: `tests/integration/action-cleanup-integration.test.js`
+- End-to-end testing of action cleanup with live stream preservation
+- Complete recurring stream creation with day structure preservation
+- API failure handling during cleanup processes
+- Multi-day and multi-week action scheduling scenarios
+- File system operations and data persistence
 
 ## 🛠️ Writing New Tests
 
@@ -187,6 +206,9 @@ describe('Feature Name', () => {
 - ✅ Renderer process OAuth UI
 - ✅ Scheduler functionality
 - ✅ OBS integration
+- ✅ Action management and cleanup
+- ✅ Recurring stream day structure preservation
+- ✅ Live stream action preservation during boot
 - ✅ Error handling and edge cases
 
 ### Future Coverage Areas

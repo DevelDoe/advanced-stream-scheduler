@@ -149,6 +149,51 @@ function applyFlowToBroadcast(broadcastId, scheduledStartISO) {
     return added;
 }
 
+// Apply saved flow to a new broadcast preserving day structure for recurring streams
+function applyFlowToBroadcastWithDayStructure(broadcastId, scheduledStartISO, originalBaseTimeISO) {
+    const { steps = [] } = loadSceneFlow();
+    if (!steps.length) return 0;
+
+    const newStartMs = new Date(scheduledStartISO).getTime();
+    const originalStartMs = new Date(originalBaseTimeISO).getTime();
+    let added = 0;
+
+    for (const s of steps) {
+        // Calculate the original absolute time for this action
+        const originalActionMs = originalStartMs + s.offsetSec * 1000;
+        const originalActionDate = new Date(originalActionMs);
+        
+        // Calculate how many days after the original start this action was scheduled
+        const originalStartDate = new Date(originalStartMs);
+        const daysAfterOriginalStart = Math.floor((originalActionMs - originalStartMs) / (1000 * 60 * 60 * 24));
+        
+        // Create the new action date by adding the same number of days to the new start date
+        const newActionDate = new Date(newStartMs);
+        newActionDate.setDate(newActionDate.getDate() + daysAfterOriginalStart);
+        
+        // Preserve the original time of day
+        newActionDate.setHours(originalActionDate.getHours());
+        newActionDate.setMinutes(originalActionDate.getMinutes());
+        newActionDate.setSeconds(originalActionDate.getSeconds());
+        newActionDate.setMilliseconds(originalActionDate.getMilliseconds());
+        
+        const atISO = newActionDate.toISOString();
+        const action = {
+            id: randomUUID(),
+            broadcastId,
+            at: atISO,
+            type: s.type,
+            payload: s.payload || {},
+        };
+        actions.push(action);
+        scheduleOneOffAction(action);
+        added++;
+    }
+    saveActions(actions);
+    BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `📋 Applied scene flow with day structure: scheduled ${added} action(s).`);
+    return added;
+}
+
 // Try to transition broadcast to LIVE with retry
 async function goLiveWithRetry(auth, broadcastId, maxRetries = 5, delayMs = 10_000) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -493,8 +538,8 @@ app.whenReady().then(async () => {
                             }
                         }
 
-                        // copy actions (relative offsets)
-                        applyFlowToBroadcast(nextResult.id, isoNext);
+                        // copy actions preserving day structure for recurring streams
+                        applyFlowToBroadcastWithDayStructure(nextResult.id, isoNext, info.baseTime);
 
                         // carry recurrence forward to the NEW broadcast id
                         recurringData[nextResult.id] = { ...info };
@@ -1070,9 +1115,22 @@ async function cleanupOrphanedData() {
         const scheduledBroadcasts = await listUpcomingBroadcasts(auth);
         const scheduledIds = new Set(scheduledBroadcasts.map(b => b.id));
         
-        // Clean up orphaned actions
+        // Also get active/live broadcasts to prevent deleting actions for streams that are currently live
+        let activeBroadcastIds = new Set();
+        try {
+            const activeBroadcasts = await listActiveBroadcasts(auth);
+            activeBroadcastIds = new Set(activeBroadcasts.map(b => b.id));
+            BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `🔍 Found ${activeBroadcastIds.size} active broadcast(s) to preserve actions for`);
+        } catch (error) {
+            BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `⚠️ Could not fetch active broadcasts: ${error?.message || error}`);
+        }
+        
+        // Combine scheduled and active broadcast IDs
+        const validBroadcastIds = new Set([...scheduledIds, ...activeBroadcastIds]);
+        
+        // Clean up orphaned actions (only those not in scheduled OR active broadcasts)
         const originalActionCount = actions.length;
-        const orphanedActions = actions.filter(action => !scheduledIds.has(action.broadcastId));
+        const orphanedActions = actions.filter(action => !validBroadcastIds.has(action.broadcastId));
         
         if (orphanedActions.length > 0) {
             // Cancel any scheduled timers for orphaned actions
@@ -1083,15 +1141,15 @@ async function cleanupOrphanedData() {
             }
             
             // Remove orphaned actions from memory and storage
-            actions = actions.filter(action => scheduledIds.has(action.broadcastId));
+            actions = actions.filter(action => validBroadcastIds.has(action.broadcastId));
             saveActions(actions);
             
             BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `🧹 Cleaned up ${orphanedActions.length} orphaned action(s) for non-existent broadcasts`);
         }
         
-        // Clean up orphaned recurring data
+        // Clean up orphaned recurring data (use same valid broadcast IDs)
         const recurringData = loadRecurring();
-        const orphanedRecurring = Object.keys(recurringData).filter(id => !scheduledIds.has(id));
+        const orphanedRecurring = Object.keys(recurringData).filter(id => !validBroadcastIds.has(id));
         
         if (orphanedRecurring.length > 0) {
             for (const id of orphanedRecurring) {
