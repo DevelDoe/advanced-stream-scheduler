@@ -243,12 +243,20 @@ describe('Action Cleanup Integration Tests', () => {
                     const originalActionMs = originalStartMs + s.offsetSec * 1000;
                     const originalActionDate = new Date(originalActionMs);
                     
-                    // Calculate how many days after the original start this action was scheduled
-                    const daysAfterOriginalStart = Math.floor((originalActionMs - originalStartMs) / (1000 * 60 * 60 * 24));
+                    // Calculate the day difference more accurately
+                    // Get the start of day for both dates to avoid time-of-day affecting the calculation
+                    const originalStartOfDay = new Date(originalStartMs);
+                    originalStartOfDay.setHours(0, 0, 0, 0);
                     
-                    // Create the new action date by adding the same number of days to the new start date
+                    const originalActionStartOfDay = new Date(originalActionMs);
+                    originalActionStartOfDay.setHours(0, 0, 0, 0);
+                    
+                    // Calculate days difference
+                    const daysDifference = Math.round((originalActionStartOfDay.getTime() - originalStartOfDay.getTime()) / (1000 * 60 * 60 * 24));
+                    
+                    // Create the new action date
                     const newActionDate = new Date(newStartMs);
-                    newActionDate.setDate(newActionDate.getDate() + daysAfterOriginalStart);
+                    newActionDate.setDate(newActionDate.getDate() + daysDifference);
                     
                     // Preserve the original time of day
                     newActionDate.setHours(originalActionDate.getHours());
