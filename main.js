@@ -162,28 +162,28 @@ function applyFlowToBroadcastWithDayStructure(broadcastId, scheduledStartISO, or
         // Calculate the original absolute time for this action
         const originalActionMs = originalStartMs + s.offsetSec * 1000;
         const originalActionDate = new Date(originalActionMs);
-        
+
         // Calculate the day difference more accurately
         // Get the start of day for both dates to avoid time-of-day affecting the calculation
         const originalStartOfDay = new Date(originalStartMs);
         originalStartOfDay.setHours(0, 0, 0, 0);
-        
+
         const originalActionStartOfDay = new Date(originalActionMs);
         originalActionStartOfDay.setHours(0, 0, 0, 0);
-        
+
         // Calculate days difference
         const daysDifference = Math.round((originalActionStartOfDay.getTime() - originalStartOfDay.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         // Create the new action date
         const newActionDate = new Date(newStartMs);
         newActionDate.setDate(newActionDate.getDate() + daysDifference);
-        
+
         // Preserve the original time of day
         newActionDate.setHours(originalActionDate.getHours());
         newActionDate.setMinutes(originalActionDate.getMinutes());
         newActionDate.setSeconds(originalActionDate.getSeconds());
         newActionDate.setMilliseconds(originalActionDate.getMilliseconds());
-        
+
         const atISO = newActionDate.toISOString();
         const action = {
             id: randomUUID(),
@@ -195,7 +195,7 @@ function applyFlowToBroadcastWithDayStructure(broadcastId, scheduledStartISO, or
         actions.push(action);
         scheduleOneOffAction(action);
         added++;
-        
+
         // Log for debugging
         BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `📅 Action ${s.type}: Original ${originalActionDate.toISOString()} → New ${atISO} (${daysDifference} days offset)`);
     }
@@ -246,7 +246,7 @@ function loadOBSConfig() {
             host: "localhost",
             port: 4455,
             password: "",
-            enabled: true
+            enabled: true,
         };
     }
 }
@@ -255,8 +255,6 @@ function saveOBSConfig(config) {
     fs.writeFileSync(OBS_CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
-
-
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 900,
@@ -264,63 +262,63 @@ function createWindow() {
         webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false },
     });
     mainWindow.loadFile("index.html");
-    
+
     // Create application menu
     const template = [
         {
-            label: 'File',
+            label: "File",
             submenu: [
                 {
-                    label: 'OBS Settings',
-                    accelerator: 'CmdOrCtrl+,',
+                    label: "OBS Settings",
+                    accelerator: "CmdOrCtrl+,",
                     click: () => {
                         mainWindow?.webContents.send("open.obsSettings");
-                    }
+                    },
                 },
                 {
-                    label: 'Google Credentials Setup',
-                    accelerator: 'CmdOrCtrl+Shift+C',
+                    label: "Google Credentials Setup",
+                    accelerator: "CmdOrCtrl+Shift+C",
                     click: () => {
                         mainWindow?.webContents.send("open.credentialsSetup");
-                    }
+                    },
                 },
-                { type: 'separator' },
+                { type: "separator" },
                 {
-                    label: 'Quit',
-                    accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+                    label: "Quit",
+                    accelerator: process.platform === "darwin" ? "Cmd+Q" : "Ctrl+Q",
                     click: () => {
                         app.quit();
-                    }
-                }
-            ]
+                    },
+                },
+            ],
         },
         {
-            label: 'Tools',
+            label: "Tools",
             submenu: [
                 {
-                    label: 'Toggle Log Panel (Ctrl+L)',
-                    accelerator: 'CmdOrCtrl+L',
+                    label: "Toggle Log Panel (Ctrl+L)",
+                    accelerator: "CmdOrCtrl+L",
                     click: () => {
                         mainWindow?.webContents.send("toggle.logPanel");
-                    }
+                    },
                 },
                 {
-                    label: 'Open DevTools',
-                    accelerator: 'F12',
+                    label: "Open DevTools",
+                    accelerator: "F12",
                     click: () => {
                         mainWindow?.webContents.openDevTools();
-                    }
+                    },
                 },
                 {
-                    label: 'Check for Updates',
+                    label: "Check for Updates",
                     click: () => {
                         mainWindow?.webContents.send("scheduler/log", "🔍 Checking for updates...");
                         autoUpdater.checkForUpdates();
-                    }
+                    },
                 },
 
                 {
-                    label: 'Restart Scheduler',
+                    label: "Restart Scheduler",
                     click: () => {
                         try {
                             restartScheduler();
@@ -328,12 +326,12 @@ function createWindow() {
                         } catch (e) {
                             mainWindow?.webContents.send("scheduler/log", `❌ Failed to restart scheduler: ${e?.message || e}`);
                         }
-                    }
-                }
-            ]
-        }
+                    },
+                },
+            ],
+        },
     ];
-    
+
     applicationMenu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(applicationMenu);
 }
@@ -342,7 +340,7 @@ function createWindow() {
  * Calculate the next occurrence of a stream based on selected days of the week.
  * This function finds the next day that matches one of the selected daysOfWeek,
  * starting from the day after the baseDate.
- * 
+ *
  * @param {number[]} daysOfWeek - Array of day numbers (0=Sunday, 1=Monday, etc.)
  * @param {Date} baseDate - The reference date to calculate from (usually when the last stream started)
  * @returns {Date} The next occurrence date
@@ -353,64 +351,66 @@ function getNextOccurrence(daysOfWeek, baseDate) {
     while (!daysOfWeek.includes(d.getDay())) {
         d.setDate(d.getDate() + 1);
     }
-    
+
     // Log the calculation for debugging
     const baseTimeStr = baseDate.toISOString();
     const nextTimeStr = d.toISOString();
-    console.log(`[getNextOccurrence] Base: ${baseTimeStr}, Next: ${nextTimeStr}, Days: [${daysOfWeek.join(',')}]`);
-    
+    console.log(`[getNextOccurrence] Base: ${baseTimeStr}, Next: ${nextTimeStr}, Days: [${daysOfWeek.join(",")}]`);
+
     return d;
 }
 
 app.whenReady().then(async () => {
     // Configure auto-updater
     autoUpdater.logger = electronLog;
-    autoUpdater.logger.transports.file.level = 'info';
-    
+    autoUpdater.logger.transports.file.level = "info";
+
     // Check for updates on startup (but don't auto-download)
     autoUpdater.checkForUpdates();
-    
+
     // Auto-updater events
-    autoUpdater.on('checking-for-update', () => {
+    autoUpdater.on("checking-for-update", () => {
         mainWindow?.webContents.send("scheduler/log", "🔍 Checking for updates...");
     });
-    
-    autoUpdater.on('update-available', (info) => {
+
+    autoUpdater.on("update-available", (info) => {
         mainWindow?.webContents.send("scheduler/log", `📦 Update available: ${info.version}`);
         mainWindow?.webContents.send("update/available", info);
     });
-    
-    autoUpdater.on('update-not-available', () => {
+
+    autoUpdater.on("update-not-available", () => {
         mainWindow?.webContents.send("scheduler/log", "✅ App is up to date");
     });
-    
-    autoUpdater.on('error', (err) => {
+
+    autoUpdater.on("error", (err) => {
         mainWindow?.webContents.send("scheduler/log", `❌ Update error: ${err.message}`);
     });
-    
-    autoUpdater.on('download-progress', (progressObj) => {
+
+    autoUpdater.on("download-progress", (progressObj) => {
         const percent = Math.round(progressObj.percent);
         mainWindow?.webContents.send("scheduler/log", `📥 Downloading update: ${percent}%`);
         mainWindow?.webContents.send("update/progress", progressObj);
     });
-    
-    autoUpdater.on('update-downloaded', (info) => {
+
+    autoUpdater.on("update-downloaded", (info) => {
         mainWindow?.webContents.send("scheduler/log", `✅ Update downloaded: ${info.version}`);
         mainWindow?.webContents.send("update/downloaded", info);
-        
+
         // Ask user if they want to install now
-        dialog.showMessageBox(mainWindow, {
-            type: 'info',
-            title: 'Update Ready',
-            message: `Update ${info.version} has been downloaded. Would you like to install it now?`,
-            detail: 'The app will restart after installation.',
-            buttons: ['Install Now', 'Later'],
-            defaultId: 0
-        }).then((result) => {
-            if (result.response === 0) {
-                autoUpdater.quitAndInstall();
-            }
-        });
+        dialog
+            .showMessageBox(mainWindow, {
+                type: "info",
+                title: "Update Ready",
+                message: `Update ${info.version} has been downloaded. Would you like to install it now?`,
+                detail: "The app will restart after installation.",
+                buttons: ["Install Now", "Later"],
+                defaultId: 0,
+            })
+            .then((result) => {
+                if (result.response === 0) {
+                    autoUpdater.quitAndInstall();
+                }
+            });
     });
 
     // Send initial loading states
@@ -418,19 +418,19 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "loading" });
     mainWindow?.webContents.send("scheduler/loading", { component: "obs", status: "loading" });
     mainWindow?.webContents.send("scheduler/loading", { component: "broadcast", status: "loading" });
-    
+
     createWindow();
-    
+
     // Start scheduler
     startScheduler();
     mainWindow?.webContents.send("scheduler/loading", { component: "scheduler", status: "ready" });
     mainWindow?.webContents.send("scheduler/log", "🚀 Application starting up...");
-    
+
     // Load actions
     actions = loadActions();
     actions.forEach((action) => scheduleOneOffAction(action));
     mainWindow?.webContents.send("scheduler/log", `📋 Loaded ${actions.length} scheduled action(s)`);
-    
+
     // Welcome message for new users
     mainWindow?.webContents.send("scheduler/log", "🎉 Welcome to Advanced Stream Scheduler!");
     mainWindow?.webContents.send("scheduler/log", "📝 First time? Go to File → Google Credentials Setup to get started.");
@@ -443,8 +443,6 @@ app.whenReady().then(async () => {
         mainWindow?.webContents.send("scheduler/loading", { component: "obs", status: "ready" });
         mainWindow?.webContents.send("scheduler/log", "✅ OBS WebSocket connection established");
     });
-
-
 
     // Note: Automatic cleanup removed - now only manual cleanup is allowed
     // This prevents accidentally deleting actions for live broadcasts that haven't been detected yet
@@ -460,7 +458,7 @@ app.whenReady().then(async () => {
                     mainWindow?.webContents.send("scheduler/log", "⏳ OAuth in progress, skipping start action...");
                     return;
                 }
-                
+
                 loadAuth(async (auth, error) => {
                     if (error) {
                         mainWindow?.webContents.send("scheduler/log", `❌ Go-live after start failed: ${error?.message || error}`);
@@ -482,7 +480,7 @@ app.whenReady().then(async () => {
                 mainWindow?.webContents.send("scheduler/log", "⏳ OAuth in progress, skipping end action...");
                 return;
             }
-            
+
             loadAuth(async (auth, error) => {
                 if (error) {
                     mainWindow?.webContents.send("scheduler/log", `❌ Failed to end YouTube broadcast: ${error?.message || error}`);
@@ -504,7 +502,7 @@ app.whenReady().then(async () => {
                     mainWindow?.webContents.send("scheduler/log", "⏳ OAuth in progress, skipping recurring setup...");
                     return;
                 }
-                
+
                 loadAuth(async (auth, error) => {
                     if (error) {
                         mainWindow?.webContents.send("scheduler/log", `❌ Failed to schedule recurring: ${error?.message || error}`);
@@ -515,16 +513,17 @@ app.whenReady().then(async () => {
                     const streamStartTime = new Date(info.baseTime);
                     const currentTime = new Date();
                     mainWindow?.webContents.send("scheduler/log", `🔁 Recurring: Stream started at ${streamStartTime.toISOString()}, Current time: ${currentTime.toISOString()}`);
-                    
+
                     // Validate that the stream start time is reasonable (not too far in the past)
                     const timeDiffHours = (currentTime.getTime() - streamStartTime.getTime()) / (1000 * 60 * 60);
-                    if (timeDiffHours > 168) { // 7 days
+                    if (timeDiffHours > 168) {
+                        // 7 days
                         mainWindow?.webContents.send("scheduler/log", `⚠️ Warning: Stream start time is ${Math.round(timeDiffHours)} hours old. This might indicate a timing issue.`);
                     }
-                    
+
                     const nextDate = getNextOccurrence(info.days, streamStartTime);
                     const isoNext = nextDate.toISOString();
-                    
+
                     mainWindow?.webContents.send("scheduler/log", `🔁 Recurring: Next stream scheduled for ${nextDate.toISOString()}`);
 
                     const { title, description, privacy, latency, thumbPath } = info.meta || {};
@@ -552,8 +551,11 @@ app.whenReady().then(async () => {
                         applyFlowToBroadcastWithDayStructure(nextResult.id, isoNext, info.baseTime);
 
                         // carry recurrence forward to the NEW broadcast id
-                        recurringData[nextResult.id] = { ...info };
-                        // optional: remove the old id’s entry
+                        recurringData[nextResult.id] = {
+                            ...info,
+                            baseTime: isoNext, // Update baseTime to the new stream's start time
+                        };
+                        // optional: remove the old id's entry
                         delete recurringData[action.broadcastId];
                         saveRecurring(recurringData);
 
@@ -585,17 +587,17 @@ app.whenReady().then(async () => {
         }
         return { ok: true };
     });
-    
+
     ipcMain.handle("obs.testConnection", async (_evt, config) => {
         try {
             const OBSWebSocket = (await import("obs-websocket-js")).default;
             const obs = new OBSWebSocket();
-            
+
             const url = `ws://${config.host}:${config.port}`;
             await obs.connect(url, config.password || "");
             const ver = await obs.call("GetVersion");
             await obs.disconnect();
-            
+
             return { ok: true, version: ver?.obsVersion };
         } catch (error) {
             return { ok: false, error: error?.message || String(error) };
@@ -618,7 +620,7 @@ app.whenReady().then(async () => {
         const { canceled, filePaths } = await dialog.showOpenDialog({
             properties: ["openFile"],
             filters: [{ name: "JSON Files", extensions: ["json"] }],
-            title: "Select Google OAuth Credentials File (credentials.json)"
+            title: "Select Google OAuth Credentials File (credentials.json)",
         });
         if (canceled || !filePaths?.length) return { path: null, name: null };
         const p = filePaths[0];
@@ -685,7 +687,7 @@ app.whenReady().then(async () => {
         if (isOAuthInProgress()) {
             return;
         }
-        
+
         loadAuth(async (auth, error) => {
             if (error) {
                 // Mark YouTube API as failed
@@ -693,8 +695,8 @@ app.whenReady().then(async () => {
                     global.__youtubeReady = false;
                     global.__autoCleanupTriggered = false; // Reset auto-cleanup trigger
                     mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "error" });
-                    
-                    if (error.code === 'CREDENTIALS_MISSING') {
+
+                    if (error.code === "CREDENTIALS_MISSING") {
                         // Don't spam the log with credentials missing messages
                         if (!global.__credentialsMissingLogged) {
                             mainWindow?.webContents.send("scheduler/log", "ℹ️ Google OAuth credentials not configured yet. Go to File → Google Credentials Setup to get started.");
@@ -704,7 +706,7 @@ app.whenReady().then(async () => {
                         mainWindow?.webContents.send("scheduler/log", `❌ YouTube API connection failed: ${error?.message || error}`);
                     }
                 }
-                
+
                 BrowserWindow.getAllWindows()[0]?.webContents.send("broadcast/status", {
                     ok: false,
                     error: error?.message || String(error),
@@ -723,21 +725,19 @@ app.whenReady().then(async () => {
                     liveCount,
                     ids,
                 });
-                
+
                 // Mark broadcast component as ready on first successful connection
                 if (!global.__broadcastReady) {
                     global.__broadcastReady = true;
                     mainWindow?.webContents.send("scheduler/loading", { component: "broadcast", status: "ready" });
                 }
-                
+
                 // Mark YouTube API as ready on first successful connection
                 if (!global.__youtubeReady) {
                     global.__youtubeReady = true;
                     mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "ready" });
                     mainWindow?.webContents.send("scheduler/log", "✅ YouTube API connection established");
                 }
-                
-
 
                 // Auto-trigger cleanup when we have a complete picture of broadcast state
                 if (global.__youtubeReady && !global.__autoCleanupTriggered) {
@@ -766,7 +766,7 @@ app.whenReady().then(async () => {
                     mainWindow?.webContents.send("scheduler/loading", { component: "youtube", status: "error" });
                     mainWindow?.webContents.send("scheduler/log", `❌ YouTube API connection failed: ${err?.message || err}`);
                 }
-                
+
                 BrowserWindow.getAllWindows()[0]?.webContents.send("broadcast/status", {
                     ok: false,
                     error: err?.message || String(err),
@@ -774,8 +774,6 @@ app.whenReady().then(async () => {
             }
         });
     }, 30_000);
-
-
 
     // Note: Periodic automatic cleanup removed - now only manual cleanup is allowed
     // This prevents accidentally deleting actions for live broadcasts
@@ -786,38 +784,38 @@ app.whenReady().then(async () => {
     }, 6 * 60 * 60 * 1000);
 });
 
-    // List upcoming
-    ipcMain.handle(
-        "yt.listUpcoming",
-        async () =>
-            new Promise((resolve, reject) => {
-                if (isOAuthInProgress()) {
-                    reject(new Error("OAuth authentication in progress. Please wait for it to complete."));
+// List upcoming
+ipcMain.handle(
+    "yt.listUpcoming",
+    async () =>
+        new Promise((resolve, reject) => {
+            if (isOAuthInProgress()) {
+                reject(new Error("OAuth authentication in progress. Please wait for it to complete."));
+                return;
+            }
+
+            loadAuth(async (auth, error) => {
+                if (error) {
+                    reject(error);
                     return;
                 }
-                
-                loadAuth(async (auth, error) => {
-                    if (error) {
-                        reject(error);
-                        return;
-                    }
-                    try {
-                        const broadcasts = await listUpcomingBroadcasts(auth);
-                        const recurringData = loadRecurring();
-                        
-                        // Add recurring information to each broadcast
-                        const broadcastsWithRecurring = broadcasts.map(broadcast => ({
-                            ...broadcast,
-                            recurring: recurringData[broadcast.id] || null
-                        }));
-                        
-                        resolve(broadcastsWithRecurring);
-                    } catch (e) {
-                        reject(e);
-                    }
-                });
-            })
-    );
+                try {
+                    const broadcasts = await listUpcomingBroadcasts(auth);
+                    const recurringData = loadRecurring();
+
+                    // Add recurring information to each broadcast
+                    const broadcastsWithRecurring = broadcasts.map((broadcast) => ({
+                        ...broadcast,
+                        recurring: recurringData[broadcast.id] || null,
+                    }));
+
+                    resolve(broadcastsWithRecurring);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        })
+);
 
 // Delete one
 ipcMain.handle(
@@ -828,7 +826,7 @@ ipcMain.handle(
                 reject(new Error("OAuth authentication in progress. Please wait for it to complete."));
                 return;
             }
-            
+
             loadAuth(async (auth, error) => {
                 if (error) {
                     reject(error);
@@ -883,7 +881,7 @@ ipcMain.handle("scheduleStream", async (_evt, payload) => {
             reject(new Error("OAuth authentication in progress. Please wait for it to complete."));
             return;
         }
-        
+
         loadAuth(async (auth, error) => {
             if (error) {
                 reject(error);
@@ -1038,13 +1036,13 @@ ipcMain.handle("yt.endStream", async (_evt, broadcastId) => {
                 // First, end the YouTube broadcast
                 const res = await transitionBroadcast(auth, broadcastId, "complete");
                 mainWindow?.webContents.send("scheduler/log", `📡 Transitioned broadcast ${broadcastId} → COMPLETE`);
-                
+
                 // Then stop the OBS stream
                 try {
                     const OBSWebSocket = (await import("obs-websocket-js")).default;
                     const obs = new OBSWebSocket();
                     const config = loadOBSConfig();
-                    
+
                     if (config.enabled) {
                         const url = `ws://${config.host}:${config.port}`;
                         await obs.connect(url, config.password || "");
@@ -1056,12 +1054,12 @@ ipcMain.handle("yt.endStream", async (_evt, broadcastId) => {
                     mainWindow?.webContents.send("scheduler/log", `⚠️ Failed to stop OBS stream: ${obsError?.message || obsError}`);
                     // Don't fail the entire operation if OBS fails
                 }
-                
+
                 // Only return serializable data to avoid IPC cloning errors
-                resolve({ 
-                    ok: true, 
+                resolve({
+                    ok: true,
                     broadcastId,
-                    message: "Stream ended successfully"
+                    message: "Stream ended successfully",
                 });
             } catch (e) {
                 reject(e);
@@ -1069,8 +1067,6 @@ ipcMain.handle("yt.endStream", async (_evt, broadcastId) => {
         });
     });
 });
-
-
 
 // IPC from renderer: check for updates
 ipcMain.handle("update.check", async () => {
@@ -1092,21 +1088,21 @@ ipcMain.handle("update.download", async () => {
     }
 });
 
-    // IPC from renderer: install update
-    ipcMain.handle("update.install", async () => {
-        try {
-            autoUpdater.quitAndInstall();
-            return { ok: true };
-        } catch (error) {
-            return { ok: false, error: error?.message || error };
-        }
-    });
-
-    // IPC from renderer: toggle log panel
-    ipcMain.handle("toggle.logPanel", async () => {
-        mainWindow?.webContents.send("toggle.logPanel");
+// IPC from renderer: install update
+ipcMain.handle("update.install", async () => {
+    try {
+        autoUpdater.quitAndInstall();
         return { ok: true };
-    });
+    } catch (error) {
+        return { ok: false, error: error?.message || error };
+    }
+});
+
+// IPC from renderer: toggle log panel
+ipcMain.handle("toggle.logPanel", async () => {
+    mainWindow?.webContents.send("toggle.logPanel");
+    return { ok: true };
+});
 
 // Clean up orphaned actions and recurring data
 async function cleanupOrphanedData() {
@@ -1121,27 +1117,27 @@ async function cleanupOrphanedData() {
                 }
             });
         });
-        
+
         const scheduledBroadcasts = await listUpcomingBroadcasts(auth);
-        const scheduledIds = new Set(scheduledBroadcasts.map(b => b.id));
-        
+        const scheduledIds = new Set(scheduledBroadcasts.map((b) => b.id));
+
         // Also get active/live broadcasts to prevent deleting actions for streams that are currently live
         let activeBroadcastIds = new Set();
         try {
             const activeBroadcasts = await listActiveBroadcasts(auth);
-            activeBroadcastIds = new Set(activeBroadcasts.map(b => b.id));
+            activeBroadcastIds = new Set(activeBroadcasts.map((b) => b.id));
             BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `🔍 Found ${activeBroadcastIds.size} active broadcast(s) to preserve actions for`);
         } catch (error) {
             BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `⚠️ Could not fetch active broadcasts: ${error?.message || error}`);
         }
-        
+
         // Combine scheduled and active broadcast IDs
         const validBroadcastIds = new Set([...scheduledIds, ...activeBroadcastIds]);
-        
+
         // Clean up orphaned actions (only those not in scheduled OR active broadcasts)
         const originalActionCount = actions.length;
-        const orphanedActions = actions.filter(action => !validBroadcastIds.has(action.broadcastId));
-        
+        const orphanedActions = actions.filter((action) => !validBroadcastIds.has(action.broadcastId));
+
         if (orphanedActions.length > 0) {
             // Cancel any scheduled timers for orphaned actions
             for (const action of orphanedActions) {
@@ -1149,33 +1145,32 @@ async function cleanupOrphanedData() {
                     cancelOneOffAction(action.id);
                 } catch {}
             }
-            
+
             // Remove orphaned actions from memory and storage
-            actions = actions.filter(action => validBroadcastIds.has(action.broadcastId));
+            actions = actions.filter((action) => validBroadcastIds.has(action.broadcastId));
             saveActions(actions);
-            
+
             BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `🧹 Cleaned up ${orphanedActions.length} orphaned action(s) for non-existent broadcasts`);
         }
-        
+
         // Clean up orphaned recurring data (use same valid broadcast IDs)
         const recurringData = loadRecurring();
-        const orphanedRecurring = Object.keys(recurringData).filter(id => !validBroadcastIds.has(id));
-        
+        const orphanedRecurring = Object.keys(recurringData).filter((id) => !validBroadcastIds.has(id));
+
         if (orphanedRecurring.length > 0) {
             for (const id of orphanedRecurring) {
                 delete recurringData[id];
             }
             saveRecurring(recurringData);
-            
+
             BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `🧹 Cleaned up ${orphanedRecurring.length} orphaned recurring rule(s) for non-existent broadcasts`);
         }
-        
+
         if (orphanedActions.length > 0 || orphanedRecurring.length > 0) {
             BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `✅ Cleanup complete: removed ${orphanedActions.length} actions and ${orphanedRecurring.length} recurring rules`);
         } else {
             BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `✅ No orphaned data found`);
         }
-        
     } catch (error) {
         BrowserWindow.getAllWindows()[0]?.webContents.send("scheduler/log", `⚠️ Cleanup failed: ${error?.message || error}`);
     }
